@@ -25,6 +25,10 @@ const STATUS_STYLES = {
   done: "bg-emerald-100 text-emerald-800",
 };
 
+function getErrorMessage(error) {
+  return error?.response?.data?.message;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -151,12 +155,17 @@ export default function DashboardPage() {
             rows={3}
             className="w-full resize-none rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 outline-none focus:border-zinc-900"
           />
+          {createTask.isError ? (
+            <p className="text-sm text-red-600">
+              {getErrorMessage(createTask.error)}
+            </p>
+          ) : null}
           <button
             type="submit"
             disabled={createTask.isPending}
             className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60"
           >
-            Додати
+            {createTask.isPending ? "Збереження..." : "Додати"}
           </button>
         </form>
 
@@ -176,6 +185,22 @@ export default function DashboardPage() {
             </button>
           ))}
         </div>
+
+        {tasksQuery.isError ? (
+          <p className="text-sm text-red-600">
+            {getErrorMessage(tasksQuery.error)}
+          </p>
+        ) : null}
+        {updateTask.isError ? (
+          <p className="text-sm text-red-600">
+            {getErrorMessage(updateTask.error)}
+          </p>
+        ) : null}
+        {deleteTask.isError ? (
+          <p className="text-sm text-red-600">
+            {getErrorMessage(deleteTask.error)}
+          </p>
+        ) : null}
 
         {tasksQuery.isLoading ? (
           <p className="text-zinc-600">Завантаження...</p>
@@ -207,13 +232,17 @@ export default function DashboardPage() {
                 <div className="mt-4 flex items-center justify-between gap-3">
                   <select
                     value={task.status}
+                    disabled={
+                      updateTask.isPending &&
+                      updateTask.variables?.id === task.id
+                    }
                     onChange={(event) =>
                       updateTask.mutate({
                         id: task.id,
                         nextStatus: event.target.value,
                       })
                     }
-                    className="rounded-lg border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-800"
+                    className="rounded-lg border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-800 disabled:opacity-60"
                   >
                     {FILTERS.filter((filter) => filter.value !== "all").map(
                       (filter) => (
@@ -226,8 +255,12 @@ export default function DashboardPage() {
 
                   <button
                     type="button"
+                    disabled={
+                      deleteTask.isPending &&
+                      deleteTask.variables === task.id
+                    }
                     onClick={() => deleteTask.mutate(task.id)}
-                    className="rounded-lg p-2 text-zinc-500 hover:bg-red-50 hover:text-red-600"
+                    className="rounded-lg p-2 text-zinc-500 hover:bg-red-50 hover:text-red-600 disabled:opacity-60"
                     aria-label="Видалити завдання"
                   >
                     <Trash2 className="h-4 w-4" />
