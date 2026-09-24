@@ -40,6 +40,14 @@ router.post(
   taskController.reorderTasks
 );
 
+router.post("/ai-suggest", taskController.aiSuggest);
+
+router.post(
+  "/:id/ai-assist",
+  validate({ params: taskIdParamSchema }),
+  taskController.aiAssistTask
+);
+
 router.get(
   "/:id",
   validate({ params: taskIdParamSchema }),

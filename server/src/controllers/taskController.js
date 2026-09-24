@@ -1,6 +1,7 @@
 const prisma = require("../lib/prisma");
 const { NotFoundError, BadRequestError } = require("../utils/errors");
 const asyncHandler = require("../utils/asyncHandler");
+const { analyzeTaskWithAI } = require("../services/aiService");
 
 async function getOwnedTaskOrThrow(id, userId) {
   const task = await prisma.task.findFirst({
@@ -309,6 +310,68 @@ const reorderTasks = asyncHandler(async (req, res) => {
   return res.json({ message: "Порядок завдань успішно збережено" });
 });
 
+const aiSuggest = asyncHandler(async (req, res) => {
+  const { title, description } = req.body;
+  if (!title || !title.trim()) {
+    throw new BadRequestError("Поле title обов'язкове для AI аналізу");
+  }
+
+  const analysis = await analyzeTaskWithAI({ title, description });
+  return res.json({ analysis });
+});
+
+const aiAssistTask = asyncHandler(async (req, res) => {
+  const id = req.params.id;
+  const { apply = false } = req.body;
+  const task = await getOwnedTaskOrThrow(id, req.user.id);
+
+  const analysis = await analyzeTaskWithAI({
+    title: task.title,
+    description: task.description,
+  });
+
+  if (apply) {
+    if (analysis.subtasks && analysis.subtasks.length > 0) {
+      await prisma.subtask.createMany({
+        data: analysis.subtasks.map((st) => ({
+          title: st.title,
+          taskId: task.id,
+          completed: false,
+        })),
+      });
+    }
+
+    const updateData = {};
+    if (task.priority === "none" && analysis.priority) {
+      updateData.priority = analysis.priority;
+    }
+
+    if (Object.keys(updateData).length > 0) {
+      await prisma.task.update({
+        where: { id: task.id },
+        data: updateData,
+      });
+    }
+
+    const updatedTask = await prisma.task.findUnique({
+      where: { id: task.id },
+      include: {
+        tags: true,
+        subtasks: { orderBy: { createdAt: "asc" } },
+        project: true,
+      },
+    });
+
+    return res.json({
+      analysis,
+      task: updatedTask,
+      message: "AI пропозиції успішно застосовано до завдання",
+    });
+  }
+
+  return res.json({ analysis, task });
+});
+
 module.exports = {
   listTasks,
   getTask,
@@ -319,4 +382,6 @@ module.exports = {
   batchAction,
   toggleSubtask,
   reorderTasks,
+  aiSuggest,
+  aiAssistTask,
 };
