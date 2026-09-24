@@ -7,6 +7,7 @@ const {
   updateTaskSchema,
   taskIdParamSchema,
   listTasksQuerySchema,
+  batchActionSchema,
 } = require("../schemas/taskSchemas");
 
 const router = express.Router();
@@ -25,6 +26,18 @@ router.post(
   taskController.createTask
 );
 
+router.post(
+  "/batch",
+  validate({ body: batchActionSchema }),
+  taskController.batchAction
+);
+
+router.get(
+  "/:id",
+  validate({ params: taskIdParamSchema }),
+  taskController.getTask
+);
+
 router.put(
   "/:id",
   validate({ params: taskIdParamSchema, body: updateTaskSchema }),
@@ -35,6 +48,18 @@ router.delete(
   "/:id",
   validate({ params: taskIdParamSchema }),
   taskController.deleteTask
+);
+
+router.post(
+  "/:id/restore",
+  validate({ params: taskIdParamSchema }),
+  taskController.restoreTask
+);
+
+router.post(
+  "/:id/subtasks/:subtaskId/toggle",
+  validate({ params: taskIdParamSchema }),
+  taskController.toggleSubtask
 );
 
 module.exports = router;
