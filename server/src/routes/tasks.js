@@ -6,6 +6,7 @@ const {
   createTaskSchema,
   updateTaskSchema,
   taskIdParamSchema,
+  subtaskParamSchema,
   listTasksQuerySchema,
   batchActionSchema,
 } = require("../schemas/taskSchemas");
@@ -58,7 +59,7 @@ router.post(
 
 router.post(
   "/:id/subtasks/:subtaskId/toggle",
-  validate({ params: taskIdParamSchema }),
+  validate({ params: subtaskParamSchema }),
   taskController.toggleSubtask
 );
 

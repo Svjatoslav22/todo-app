@@ -77,6 +77,11 @@ const taskIdParamSchema = z.object({
     .positive("ID завдання повинен бути більшим за 0"),
 });
 
+const subtaskParamSchema = z.object({
+  id: z.coerce.number().int().positive(),
+  subtaskId: z.coerce.number().int().positive(),
+});
+
 const listTasksQuerySchema = z.object({
   status: z.enum(TASK_STATUSES).optional(),
   priority: z.enum(TASK_PRIORITIES).optional(),
@@ -112,6 +117,7 @@ module.exports = {
   createTaskSchema,
   updateTaskSchema,
   taskIdParamSchema,
+  subtaskParamSchema,
   listTasksQuerySchema,
   batchActionSchema,
 };
