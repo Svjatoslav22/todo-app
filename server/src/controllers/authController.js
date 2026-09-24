@@ -9,12 +9,20 @@ const {
 } = require("../utils/jwt");
 const {
   UnauthorizedError,
+  ForbiddenError,
   ConflictError,
 } = require("../utils/errors");
 const asyncHandler = require("../utils/asyncHandler");
+const { logAudit } = require("../utils/auditLogger");
 
 function publicUser(user) {
-  return { id: user.id, email: user.email, createdAt: user.createdAt };
+  return {
+    id: user.id,
+    email: user.email,
+    role: user.role || "user",
+    isBanned: Boolean(user.isBanned),
+    createdAt: user.createdAt,
+  };
 }
 
 function setAuthCookies(res, refreshToken) {
@@ -36,10 +44,17 @@ const register = asyncHandler(async (req, res) => {
     },
   });
 
-  const accessToken = signAccessToken({ id: user.id });
+  const accessToken = signAccessToken({ id: user.id, role: user.role });
   const refreshToken = signRefreshToken({ id: user.id });
 
   setAuthCookies(res, refreshToken);
+
+  logAudit({
+    action: "USER_REGISTER",
+    details: `Новий користувач ${user.email} зареєструвався`,
+    userId: user.id,
+    ip: req.ip,
+  });
 
   return res.status(201).json({
     token: accessToken,
@@ -59,10 +74,21 @@ const login = asyncHandler(async (req, res) => {
     throw new UnauthorizedError("Невірний email або пароль");
   }
 
-  const accessToken = signAccessToken({ id: user.id });
+  if (user.isBanned) {
+    throw new ForbiddenError("Ваш обліковий запис заблоковано адміністратором");
+  }
+
+  const accessToken = signAccessToken({ id: user.id, role: user.role });
   const refreshToken = signRefreshToken({ id: user.id });
 
   setAuthCookies(res, refreshToken);
+
+  logAudit({
+    action: "USER_LOGIN",
+    details: `Користувач ${user.email} увійшов у систему`,
+    userId: user.id,
+    ip: req.ip,
+  });
 
   return res.json({
     token: accessToken,
@@ -95,7 +121,12 @@ const refresh = asyncHandler(async (req, res) => {
     throw new UnauthorizedError("Користувача більше не існує");
   }
 
-  const newAccessToken = signAccessToken({ id: user.id });
+  if (user.isBanned) {
+    res.clearCookie(REFRESH_COOKIE_NAME, REFRESH_COOKIE_OPTIONS);
+    throw new ForbiddenError("Ваш обліковий запис заблоковано адміністратором");
+  }
+
+  const newAccessToken = signAccessToken({ id: user.id, role: user.role });
   const newRefreshToken = signRefreshToken({ id: user.id });
 
   setAuthCookies(res, newRefreshToken);
@@ -107,7 +138,7 @@ const refresh = asyncHandler(async (req, res) => {
   });
 });
 
-const logout = asyncHandler(async (_req, res) => {
+const logout = asyncHandler(async (req, res) => {
   res.clearCookie(REFRESH_COOKIE_NAME, REFRESH_COOKIE_OPTIONS);
   return res.json({ message: "Успішний вихід із системи" });
 });
@@ -115,7 +146,7 @@ const logout = asyncHandler(async (_req, res) => {
 const me = asyncHandler(async (req, res) => {
   const user = await prisma.user.findUnique({
     where: { id: req.user.id },
-    select: { id: true, email: true, createdAt: true },
+    select: { id: true, email: true, role: true, isBanned: true, createdAt: true },
   });
 
   if (!user) {

@@ -1,7 +1,8 @@
 const { verifyAccessToken } = require("../utils/jwt");
-const { UnauthorizedError } = require("../utils/errors");
+const { UnauthorizedError, ForbiddenError } = require("../utils/errors");
+const prisma = require("../lib/prisma");
 
-function authMiddleware(req, res, next) {
+async function authMiddleware(req, res, next) {
   const header = req.headers.authorization;
 
   if (!header || !header.startsWith("Bearer ")) {
@@ -21,7 +22,20 @@ function authMiddleware(req, res, next) {
       return next(new UnauthorizedError("Недійсні дані токена"));
     }
 
-    req.user = { id: decoded.id };
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.id },
+      select: { id: true, email: true, role: true, isBanned: true },
+    });
+
+    if (!user) {
+      return next(new UnauthorizedError("Користувача не знайдено"));
+    }
+
+    if (user.isBanned) {
+      return next(new ForbiddenError("Ваш обліковий запис заблоковано адміністратором"));
+    }
+
+    req.user = user;
     return next();
   } catch (err) {
     if (err.name === "TokenExpiredError") {

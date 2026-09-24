@@ -21,13 +21,14 @@ async function getOwnedTaskOrThrow(id, userId) {
 
 const listTasks = asyncHandler(async (req, res) => {
   const { status, priority, projectId, isArchived, isDeleted, search, tag } = req.query;
+  const isDeletedBool = isDeleted === "true" || isDeleted === true;
   const where = {
     userId: req.user.id,
-    isDeleted: isDeleted ?? false,
+    isDeleted: isDeletedBool,
   };
 
   if (isArchived !== undefined) {
-    where.isArchived = isArchived;
+    where.isArchived = isArchived === "true" || isArchived === true;
   }
 
   if (status) {

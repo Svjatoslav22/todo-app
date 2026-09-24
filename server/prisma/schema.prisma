@@ -8,14 +8,16 @@ datasource db {
 }
 
 model User {
-  id        Int       @id @default(autoincrement())
-  email     String    @unique
+  id        Int        @id @default(autoincrement())
+  email     String     @unique
   password  String
-  role      String    @default("user")
-  createdAt DateTime  @default(now())
+  role      String     @default("user") // "user" or "admin"
+  isBanned  Boolean    @default(false)
+  createdAt DateTime   @default(now())
   tasks     Task[]
   projects  Project[]
   tags      Tag[]
+  auditLogs AuditLog[]
 }
 
 model Project {
@@ -66,4 +68,14 @@ model Task {
   subtasks    Subtask[]
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @default(now()) @updatedAt
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  action    String
+  details   String?
+  userId    Int?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  ip        String?
+  createdAt DateTime @default(now())
 }
