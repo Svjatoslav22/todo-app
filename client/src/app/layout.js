@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "TODO App",
-  description: "Simple full-stack TODO app",
+  title: "Todo Pro — Керування завданнями",
+  description: "Сучасний сервіс для планування, організації та виконання завдань",
 };
 
 export default function RootLayout({ children }) {
