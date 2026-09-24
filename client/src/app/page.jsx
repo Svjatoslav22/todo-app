@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
@@ -10,10 +10,17 @@ import {
   CheckCircle2,
   Clock,
   ListTodo,
-  MoreVertical,
   Check,
   Calendar,
   Sparkles,
+  Archive,
+  ArchiveRestore,
+  RotateCcw,
+  CheckSquare,
+  Square,
+  Tag as TagIcon,
+  Flag,
+  ListChecks,
 } from "lucide-react";
 import api, { setAccessToken } from "@/lib/api";
 import Sidebar, { SMART_LISTS } from "@/components/layout/Sidebar";
@@ -22,12 +29,19 @@ import MobileNav from "@/components/layout/MobileNav";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import CustomSelect from "@/components/ui/CustomSelect";
-import Dropdown from "@/components/ui/Dropdown";
-import Modal from "@/components/ui/Modal";
+import DatePicker, { formatDueDate } from "@/components/ui/DatePicker";
+import PrioritySelect, {
+  PRIORITY_CONFIG,
+  PRIORITY_OPTIONS,
+} from "@/components/ui/PrioritySelect";
 import Badge from "@/components/ui/Badge";
 import EmptyState from "@/components/ui/EmptyState";
 import { TaskSkeleton } from "@/components/ui/Skeleton";
+import TaskSlideOver from "@/components/tasks/TaskSlideOver";
+import BatchActionBar from "@/components/tasks/BatchActionBar";
+import Modal from "@/components/ui/Modal";
 import { useToast } from "@/providers/ToastProvider";
+import { parseNaturalLanguageTask } from "@/lib/taskParser";
 import { cn } from "@/lib/utils";
 
 const STATUS_OPTIONS = [
@@ -67,15 +81,34 @@ export default function DashboardPage() {
 
   const [activeList, setActiveList] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [priorityFilter, setPriorityFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+
+  // SlideOver task details state
+  const [selectedTask, setSelectedTask] = useState(null);
+
+  // Multi-selection state
+  const [selectedTaskIds, setSelectedTaskIds] = useState([]);
+
+  // Smart Input & Natural Language State
+  const [quickInput, setQuickInput] = useState("");
+  const inputRef = useRef(null);
+
+  // Create Task Modal State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [modalTitle, setModalTitle] = useState("");
+  const [modalDescription, setModalDescription] = useState("");
+  const [modalPriority, setModalPriority] = useState("none");
+  const [modalDueDate, setModalDueDate] = useState(null);
+  const [modalStatus, setModalStatus] = useState("todo");
+  const [modalTags, setModalTags] = useState("");
 
-  // New task form state
-  const [newTitle, setNewTitle] = useState("");
-  const [newDescription, setNewDescription] = useState("");
-  const [newStatus, setNewStatus] = useState("todo");
+  // Live parsed natural language elements
+  const parsedPreview = useMemo(() => {
+    return parseNaturalLanguageTask(quickInput);
+  }, [quickInput]);
 
-  // Authentication query
+  // Auth Query
   const meQuery = useQuery({
     queryKey: ["me"],
     queryFn: async () => {
@@ -87,27 +120,39 @@ export default function DashboardPage() {
 
   const isAuthenticated = Boolean(meQuery.data);
 
-  // Tasks query
+  // Tasks Query (fetches all active, archived, and deleted)
+  const isTrashView = activeList === "trash";
+  const isArchiveView = activeList === "archive";
+
   const tasksQuery = useQuery({
-    queryKey: ["tasks"],
+    queryKey: ["tasks", activeList],
     queryFn: async () => {
-      const { data } = await api.get("/tasks");
+      const params = {};
+      if (isTrashView) {
+        params.isDeleted = "true";
+      } else if (isArchiveView) {
+        params.isArchived = "true";
+      } else {
+        params.isArchived = "false";
+      }
+      const { data } = await api.get("/tasks", { params });
       return data.tasks;
     },
     enabled: isAuthenticated,
   });
 
-  // Create Task Mutation
+  const allTasks = useMemo(() => tasksQuery.data ?? [], [tasksQuery.data]);
+
+  // Mutations
   const createTaskMutation = useMutation({
     mutationFn: (payload) => api.post("/tasks", payload),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      setQuickInput("");
       setIsCreateModalOpen(false);
-      setNewTitle("");
-      setNewDescription("");
-      setNewStatus("todo");
+      resetModalForm();
       toast.success("Завдання додано!", {
-        description: `«${res.data?.task?.title}» успішно створено.`,
+        description: `«${res.data?.task?.title}» створено.`,
       });
     },
     onError: (err) => {
@@ -117,11 +162,13 @@ export default function DashboardPage() {
     },
   });
 
-  // Update Task Mutation
   const updateTaskMutation = useMutation({
     mutationFn: ({ id, ...data }) => api.put(`/tasks/${id}`, data),
-    onSuccess: (_data, variables) => {
+    onSuccess: (res, variables) => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      if (selectedTask?.id === variables.id) {
+        setSelectedTask(res.data.task);
+      }
       if (variables.status) {
         toast.info("Статус оновлено", {
           description: `Завдання переведено в «${STATUS_LABELS[variables.status]}».`,
@@ -130,29 +177,27 @@ export default function DashboardPage() {
     },
     onError: (err) => {
       toast.error("Помилка оновлення", {
-        description: err?.response?.data?.message || "Не вдалося оновити статус",
+        description: err?.response?.data?.message || "Не вдалося оновити дані",
       });
     },
   });
 
-  // Delete Task Mutation with Undo
   const deleteTaskMutation = useMutation({
     mutationFn: (id) => api.delete(`/tasks/${id}`),
     onSuccess: (_data, id) => {
-      // Find previous task for potential restore
-      const deletedTask = tasksQuery.data?.find((t) => t.id === id);
+      const deletedTask = allTasks.find((t) => t.id === id);
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      if (selectedTask?.id === id) {
+        setSelectedTask(null);
+      }
 
-      if (deletedTask) {
-        toast.undoable("Завдання видалено", {
-          description: `«${deletedTask.title}» видалено.`,
+      if (deletedTask && !isTrashView) {
+        toast.undoable("Завдання переміщено в корзину", {
+          description: `«${deletedTask.title}» у корзині.`,
           duration: 6000,
           onUndo: async () => {
             try {
-              await api.post("/tasks", {
-                title: deletedTask.title,
-                description: deletedTask.description,
-              });
+              await api.post(`/tasks/${id}/restore`);
               queryClient.invalidateQueries({ queryKey: ["tasks"] });
               toast.success("Завдання відновлено!");
             } catch {
@@ -160,14 +205,46 @@ export default function DashboardPage() {
             }
           },
         });
+      } else {
+        toast.success("Завдання остаточно видалено");
       }
     },
-    onError: (err) => {
-      toast.error("Помилка видалення", {
-        description: err?.response?.data?.message || "Не вдалося видалити завдання",
+  });
+
+  const restoreTaskMutation = useMutation({
+    mutationFn: (id) => api.post(`/tasks/${id}/restore`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      toast.success("Завдання відновлено з корзини!");
+    },
+  });
+
+  const batchActionMutation = useMutation({
+    mutationFn: (payload) => api.post("/tasks/batch", payload),
+    onSuccess: (_res, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      const count = variables.taskIds.length;
+      setSelectedTaskIds([]);
+
+      toast.undoable(`Дію застосовано до ${count} завдань`, {
+        description: "Ви можете скасувати останню масову зміну.",
+        duration: 6000,
+        onUndo: () => {
+          queryClient.invalidateQueries({ queryKey: ["tasks"] });
+          toast.info("Оновлення списку скасовано");
+        },
       });
     },
   });
+
+  function resetModalForm() {
+    setModalTitle("");
+    setModalDescription("");
+    setModalPriority("none");
+    setModalDueDate(null);
+    setModalStatus("todo");
+    setModalTags("");
+  }
 
   // Handle unauthorized redirects
   useEffect(() => {
@@ -177,7 +254,7 @@ export default function DashboardPage() {
     }
   }, [meQuery.isError, router]);
 
-  // Global keyboard shortcuts (N for new task)
+  // Global shortcuts
   useEffect(() => {
     function handleKeyDown(event) {
       if (
@@ -185,7 +262,7 @@ export default function DashboardPage() {
         !["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)
       ) {
         event.preventDefault();
-        setIsCreateModalOpen(true);
+        inputRef.current?.focus();
       }
     }
     window.addEventListener("keydown", handleKeyDown);
@@ -205,64 +282,125 @@ export default function DashboardPage() {
     }
   }
 
-  function handleCreateSubmit(e) {
+  // Handle Natural Language Quick Create Submission
+  function handleQuickSubmit(e) {
     e.preventDefault();
-    if (!newTitle.trim()) return;
+    const { cleanTitle, priority, dueDate, tags } = parsedPreview;
+    if (!cleanTitle) return;
 
     createTaskMutation.mutate({
-      title: newTitle.trim(),
-      description: newDescription.trim() || undefined,
-      status: newStatus,
+      title: cleanTitle,
+      priority,
+      dueDate: dueDate ? dueDate.toISOString() : null,
+      tags: tags.map((t) => ({ name: t, color: "indigo" })),
     });
   }
 
-  const allTasks = useMemo(() => tasksQuery.data ?? [], [tasksQuery.data]);
+  // Handle Modal Form Submission
+  function handleModalSubmit(e) {
+    e.preventDefault();
+    if (!modalTitle.trim()) return;
 
-  // Filter tasks according to active smart list, status filter, and search query
-  const filteredTasks = useMemo(() => {
-    return allTasks.filter((task) => {
-      // Search matching
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase();
-        const matchesTitle = task.title.toLowerCase().includes(query);
-        const matchesDesc = task.description?.toLowerCase().includes(query);
-        if (!matchesTitle && !matchesDesc) return false;
-      }
+    const parsedTags = modalTags
+      ? modalTags
+          .split(",")
+          .map((t) => t.trim().replace(/^#/, ""))
+          .filter(Boolean)
+          .map((name) => ({ name, color: "indigo" }))
+      : [];
 
-      // Status pill filter
-      if (statusFilter !== "all" && task.status !== statusFilter) {
-        return false;
-      }
-
-      // Smart lists filter
-      if (activeList === "today") {
-        const createdDate = new Date(task.createdAt).toDateString();
-        const todayDate = new Date().toDateString();
-        return createdDate === todayDate;
-      }
-      if (activeList === "important") {
-        return task.status === "in_progress";
-      }
-      if (activeList === "archive") {
-        return task.status === "done";
-      }
-
-      return true;
+    createTaskMutation.mutate({
+      title: modalTitle.trim(),
+      description: modalDescription.trim() || undefined,
+      priority: modalPriority,
+      dueDate: modalDueDate,
+      status: modalStatus,
+      tags: parsedTags,
     });
-  }, [allTasks, searchQuery, statusFilter, activeList]);
+  }
+
+  // Toggle single item selection
+  function handleToggleSelect(id, e) {
+    e?.stopPropagation();
+    setSelectedTaskIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  }
+
+  // Select all visible tasks
+  function handleSelectAll() {
+    if (selectedTaskIds.length === filteredTasks.length) {
+      setSelectedTaskIds([]);
+    } else {
+      setSelectedTaskIds(filteredTasks.map((t) => t.id));
+    }
+  }
+
+  // Filter tasks based on active smart list, filters, and search
+  const filteredTasks = allTasks.filter((task) => {
+    // Search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      const matchesTitle = task.title.toLowerCase().includes(query);
+      const matchesDesc = task.description?.toLowerCase().includes(query);
+      const matchesTag = task.tags?.some((t) =>
+        t.name.toLowerCase().includes(query)
+      );
+      if (!matchesTitle && !matchesDesc && !matchesTag) return false;
+    }
+
+    // Status filter
+    if (statusFilter !== "all" && task.status !== statusFilter) {
+      return false;
+    }
+
+    // Priority filter
+    if (priorityFilter !== "all" && task.priority !== priorityFilter) {
+      return false;
+    }
+
+    // Smart lists
+    if (activeList === "today") {
+      if (!task.dueDate) {
+        const createdDate = new Date(task.createdAt).toDateString();
+        return createdDate === new Date().toDateString();
+      }
+      return new Date(task.dueDate).toDateString() === new Date().toDateString();
+    }
+    if (activeList === "upcoming") {
+      if (task.dueDate) {
+        return new Date(task.dueDate) >= new Date();
+      }
+      return task.status === "todo";
+    }
+    if (activeList === "important") {
+      return task.priority === "urgent" || task.priority === "high";
+    }
+
+    return true;
+  });
 
   // Counts for smart lists
   const taskCounts = useMemo(() => {
-    const today = new Date().toDateString();
+    const todayStr = new Date().toDateString();
     return {
-      all: allTasks.length,
-      today: allTasks.filter(
-        (t) => new Date(t.createdAt).toDateString() === today
+      all: allTasks.filter((t) => !t.isArchived && !t.isDeleted).length,
+      today: allTasks.filter((t) => {
+        if (t.isArchived || t.isDeleted) return false;
+        if (t.dueDate) return new Date(t.dueDate).toDateString() === todayStr;
+        return new Date(t.createdAt).toDateString() === todayStr;
+      }).length,
+      upcoming: allTasks.filter(
+        (t) => !t.isArchived && !t.isDeleted && t.status === "todo"
       ).length,
-      upcoming: allTasks.filter((t) => t.status === "todo").length,
-      important: allTasks.filter((t) => t.status === "in_progress").length,
-      archive: allTasks.filter((t) => t.status === "done").length,
-      trash: 0,
+      important: allTasks.filter(
+        (t) =>
+          !t.isArchived &&
+          !t.isDeleted &&
+          (t.priority === "urgent" || t.priority === "high")
+      ).length,
+      archive: allTasks.filter((t) => t.isArchived && !t.isDeleted).length,
+      trash: allTasks.filter((t) => t.isDeleted).length,
     };
   }, [allTasks]);
 
@@ -291,12 +429,13 @@ export default function DashboardPage() {
 
   return (
     <div className="flex min-h-screen bg-slate-50 dark:bg-[#090a0f] text-slate-900 dark:text-zinc-100 transition-colors duration-200">
-      {/* Collapsible Linear/Notion Sidebar */}
+      {/* Sidebar */}
       <Sidebar
         activeList={activeList}
         onSelectList={(listId) => {
           setActiveList(listId);
           setStatusFilter("all");
+          setSelectedTaskIds([]);
         }}
         taskCounts={taskCounts}
         user={meQuery.data}
@@ -304,8 +443,8 @@ export default function DashboardPage() {
         onOpenCreateTask={() => setIsCreateModalOpen(true)}
       />
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 pb-16 md:pb-0">
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col min-w-0 pb-20 md:pb-10">
         <Header
           title={currentListConfig.label}
           icon={currentListConfig.icon}
@@ -316,80 +455,142 @@ export default function DashboardPage() {
           onOpenCreateTask={() => setIsCreateModalOpen(true)}
         />
 
-        <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-8 py-6 space-y-6">
-          {/* Quick Create Bar */}
-          <div className="relative rounded-2xl border border-zinc-200/80 dark:border-white/10 bg-white/70 dark:bg-zinc-900/60 p-2 shadow-sm backdrop-blur-xl transition focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20">
-            <form onSubmit={handleCreateSubmit} className="flex items-center gap-2">
+        <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-8 py-6 space-y-5">
+          {/* Smart Natural Language Quick Creation Bar */}
+          {!isTrashView && !isArchiveView && (
+            <div className="relative rounded-2xl border border-zinc-200/80 dark:border-white/10 bg-white/70 dark:bg-zinc-900/60 p-2.5 shadow-sm backdrop-blur-xl transition focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20">
+              <form onSubmit={handleQuickSubmit} className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-600 text-white shrink-0 ml-0.5">
+                    <Sparkles className="h-4 w-4" />
+                  </div>
+
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    placeholder="Розумне введення: наприклад «Купити каву завтра о 10 !високий #робота»..."
+                    value={quickInput}
+                    onChange={(e) => setQuickInput(e.target.value)}
+                    className="flex-1 bg-transparent px-2 py-1 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 outline-none"
+                  />
+
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    size="sm"
+                    disabled={!parsedPreview.cleanTitle || createTaskMutation.isPending}
+                    loading={createTaskMutation.isPending}
+                  >
+                    Додати
+                  </Button>
+                </div>
+
+                {/* Natural language detected badges preview */}
+                {quickInput.trim() && (
+                  <div className="flex flex-wrap items-center gap-2 px-2 pt-1 border-t border-zinc-100 dark:border-white/5 text-xs">
+                    <span className="text-[11px] font-medium text-zinc-400">
+                      Розпізнано:
+                    </span>
+
+                    {parsedPreview.priority !== "none" && (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 px-2 py-0.5 font-medium border border-amber-200/60 dark:border-amber-800/40">
+                        <Flag className="h-3 w-3" />
+                        {PRIORITY_CONFIG[parsedPreview.priority]?.label}
+                      </span>
+                    )}
+
+                    {parsedPreview.dueDate && (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 font-medium border border-indigo-200/60 dark:border-indigo-800/40">
+                        <Calendar className="h-3 w-3" />
+                        {formatDueDate(parsedPreview.dueDate)}
+                      </span>
+                    )}
+
+                    {parsedPreview.tags.map((t) => (
+                      <span
+                        key={t}
+                        className="inline-flex items-center gap-1 rounded-md bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 px-2 py-0.5 font-medium border border-purple-200/60 dark:border-purple-800/40"
+                      >
+                        <TagIcon className="h-3 w-3" />#{t}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </form>
+            </div>
+          )}
+
+          {/* Filter Bar and Mass Select Checkbox */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200/60 dark:border-white/5 pb-3">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setIsCreateModalOpen(true)}
-                className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition shrink-0 ml-1"
-                title="Розширене створення"
+                onClick={handleSelectAll}
+                className="flex items-center gap-1.5 rounded-xl px-2.5 py-1 text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition"
               >
-                <Plus className="h-4 w-4" />
+                {selectedTaskIds.length > 0 &&
+                selectedTaskIds.length === filteredTasks.length ? (
+                  <CheckSquare className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                ) : (
+                  <Square className="h-4 w-4" />
+                )}
+                <span>Вибрати всі</span>
               </button>
 
-              <input
-                type="text"
-                placeholder="Додати нове завдання... Натисніть Enter або 'N'"
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                className="flex-1 bg-transparent px-2 py-1.5 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 outline-none"
-              />
+              <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-800" />
 
-              <Button
-                type="submit"
-                variant="primary"
-                size="sm"
-                disabled={!newTitle.trim() || createTaskMutation.isPending}
-                loading={createTaskMutation.isPending}
-              >
-                Додати
-              </Button>
-            </form>
-          </div>
-
-          {/* Filters Bar & View Controls */}
-          <div className="flex items-center justify-between gap-4 border-b border-zinc-200/60 dark:border-white/5 pb-3">
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-              {[
-                { value: "all", label: "Всі" },
-                { value: "todo", label: "До виконання" },
-                { value: "in_progress", label: "В процесі" },
-                { value: "done", label: "Виконано" },
-              ].map((f) => {
-                const isActive = statusFilter === f.value;
-                return (
-                  <button
-                    key={f.value}
-                    type="button"
-                    onClick={() => setStatusFilter(f.value)}
-                    className={cn(
-                      "relative rounded-xl px-3 py-1.5 text-xs font-semibold transition-all select-none",
-                      isActive
-                        ? "text-indigo-600 dark:text-indigo-400"
-                        : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 hover:bg-zinc-100/60 dark:hover:bg-zinc-800/60"
-                    )}
-                  >
-                    {isActive && (
-                      <motion.div
-                        layoutId="activeFilterPill"
-                        className="absolute inset-0 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-800/40 -z-10"
-                        transition={{ type: "spring", stiffness: 450, damping: 35 }}
-                      />
-                    )}
-                    {f.label}
-                  </button>
-                );
-              })}
+              {/* Status filter tabs */}
+              <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+                {[
+                  { value: "all", label: "Всі" },
+                  { value: "todo", label: "До виконання" },
+                  { value: "in_progress", label: "В процесі" },
+                  { value: "done", label: "Виконано" },
+                ].map((f) => {
+                  const isActive = statusFilter === f.value;
+                  return (
+                    <button
+                      key={f.value}
+                      type="button"
+                      onClick={() => setStatusFilter(f.value)}
+                      className={cn(
+                        "relative rounded-xl px-2.5 py-1 text-xs font-semibold transition select-none",
+                        isActive
+                          ? "text-indigo-600 dark:text-indigo-400"
+                          : "text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-200"
+                      )}
+                    >
+                      {isActive && (
+                        <motion.div
+                          layoutId="activeFilterTab"
+                          className="absolute inset-0 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200/60 dark:border-indigo-800/40 -z-10"
+                        />
+                      )}
+                      {f.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
-            <span className="text-xs text-zinc-400 font-medium whitespace-nowrap">
-              {filteredTasks.length} {filteredTasks.length === 1 ? "завдання" : "завдань"}
-            </span>
+            {/* Priority filter dropdown */}
+            <div className="flex items-center gap-2">
+              <CustomSelect
+                value={priorityFilter}
+                onChange={setPriorityFilter}
+                options={[
+                  { value: "all", label: "Всі пріоритети" },
+                  ...PRIORITY_OPTIONS,
+                ]}
+                size="sm"
+              />
+              <span className="text-xs text-zinc-400 font-medium">
+                {filteredTasks.length} завдань
+              </span>
+            </div>
           </div>
 
-          {/* Tasks List Content */}
+          {/* Task List */}
           <div className="space-y-2.5">
             {tasksQuery.isLoading ? (
               <div className="space-y-3">
@@ -401,64 +602,103 @@ export default function DashboardPage() {
               <EmptyState
                 title={
                   searchQuery
-                    ? "Нічого не знайдено за запитом"
-                    : activeList === "done"
-                    ? "Немає виконаних завдань"
-                    : "У списку порожньо"
+                    ? "Нічого не знайдено"
+                    : isTrashView
+                    ? "Корзина порожня"
+                    : isArchiveView
+                    ? "Архів порожній"
+                    : "Немає завдань у цьому списку"
                 }
                 description={
                   searchQuery
-                    ? `За запитом «${searchQuery}» не знайдено жодного завдання.`
-                    : "Створіть перше завдання та почніть день продуктивно!"
+                    ? `За запитом «${searchQuery}» результатів немає.`
+                    : isTrashView
+                    ? "Усі видалені завдання з'являтимуться тут для відновлення."
+                    : isArchiveView
+                    ? "Тут зберігаються завершені проєкти та архівовані задачі."
+                    : "Створіть завдання за допомогою рядка швидкого введення вище або кнопки 'N'."
                 }
-                actionLabel="Створити перше завдання"
-                onAction={() => setIsCreateModalOpen(true)}
+                actionLabel={!isTrashView && !isArchiveView ? "Створити завдання" : undefined}
+                onAction={
+                  !isTrashView && !isArchiveView
+                    ? () => setIsCreateModalOpen(true)
+                    : undefined
+                }
               />
             ) : (
               <AnimatePresence mode="popLayout">
                 {filteredTasks.map((task) => {
                   const isDone = task.status === "done";
+                  const isSelected = selectedTaskIds.includes(task.id);
+                  const pConfig = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.none;
+                  const totalSub = task.subtasks?.length || 0;
+                  const completedSub = task.subtasks?.filter((s) => s.completed).length || 0;
+
                   return (
                     <motion.div
                       key={task.id}
                       layout
-                      initial={{ opacity: 0, y: 12, scale: 0.98 }}
+                      initial={{ opacity: 0, y: 10, scale: 0.98 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.15 } }}
+                      exit={{ opacity: 0, scale: 0.95 }}
                       transition={{ type: "spring", stiffness: 450, damping: 35 }}
+                      onClick={() => setSelectedTask(task)}
                       className={cn(
-                        "group relative flex items-start gap-3.5 rounded-2xl border p-4 transition-all duration-150 backdrop-blur-xl shadow-xs",
-                        isDone
+                        "group relative flex items-start gap-3 rounded-2xl border p-4 transition-all duration-150 backdrop-blur-xl shadow-xs cursor-pointer select-none",
+                        isSelected &&
+                          "border-indigo-500/80 bg-indigo-50/20 dark:bg-indigo-950/20 ring-1 ring-indigo-500/30",
+                        !isSelected && isDone
                           ? "border-zinc-200/50 dark:border-white/5 bg-zinc-50/50 dark:bg-zinc-950/40 opacity-75"
-                          : "border-zinc-200/80 dark:border-white/10 bg-white/80 dark:bg-zinc-900/60 hover:border-zinc-300 dark:hover:border-white/20 hover:shadow-md"
+                          : !isSelected &&
+                              "border-zinc-200/80 dark:border-white/10 bg-white/80 dark:bg-zinc-900/60 hover:border-zinc-300 dark:hover:border-white/20 hover:shadow-md"
                       )}
                     >
-                      {/* Checkbox Quick Action */}
+                      {/* Selection checkbox */}
                       <button
                         type="button"
-                        onClick={() =>
+                        onClick={(e) => handleToggleSelect(task.id, e)}
+                        className={cn(
+                          "mt-0.5 rounded-lg p-0.5 transition",
+                          isSelected
+                            ? "text-indigo-600 dark:text-indigo-400"
+                            : "text-zinc-300 dark:text-zinc-600 opacity-0 group-hover:opacity-100"
+                        )}
+                        aria-label="Вибрати"
+                      >
+                        {isSelected ? (
+                          <CheckSquare className="h-4 w-4" />
+                        ) : (
+                          <Square className="h-4 w-4" />
+                        )}
+                      </button>
+
+                      {/* Status toggle checkbox */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
                           updateTaskMutation.mutate({
                             id: task.id,
                             status: isDone ? "todo" : "done",
-                          })
-                        }
+                          });
+                        }}
                         className={cn(
-                          "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-lg border transition-all duration-150 active:scale-90",
+                          "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-lg border transition duration-150 active:scale-90",
                           isDone
-                            ? "bg-emerald-500 border-emerald-500 text-white"
+                            ? "bg-emerald-500 border-emerald-500 text-white shadow-xs"
                             : "border-zinc-300 dark:border-zinc-700 hover:border-indigo-500 text-transparent"
                         )}
-                        aria-label={isDone ? "Позначити невиконаним" : "Позначити виконаним"}
+                        aria-label={isDone ? "Невиконано" : "Виконано"}
                       >
                         <Check className="h-3.5 w-3.5 stroke-[3]" />
                       </button>
 
-                      {/* Task Info */}
+                      {/* Task Info Body */}
                       <div className="flex-1 min-w-0 space-y-1">
                         <div className="flex items-start justify-between gap-3">
                           <h3
                             className={cn(
-                              "text-sm font-semibold tracking-tight transition-all",
+                              "text-sm font-semibold tracking-tight transition",
                               isDone
                                 ? "line-through text-zinc-400 dark:text-zinc-500"
                                 : "text-zinc-900 dark:text-zinc-100"
@@ -467,8 +707,27 @@ export default function DashboardPage() {
                             {task.title}
                           </h3>
 
-                          {/* Custom Status Badge / Dropdown */}
-                          <div className="shrink-0 flex items-center gap-2">
+                          {/* Top right badges & quick options */}
+                          <div
+                            className="shrink-0 flex items-center gap-1.5"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {/* Priority Flag */}
+                            {task.priority !== "none" && (
+                              <span
+                                className={cn(
+                                  "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold border",
+                                  pConfig.bg
+                                )}
+                              >
+                                <Flag
+                                  className={cn("h-3 w-3", pConfig.fill, pConfig.color)}
+                                />
+                                <span>{pConfig.badgeLabel}</span>
+                              </span>
+                            )}
+
+                            {/* Status Select */}
                             <CustomSelect
                               value={task.status}
                               onChange={(nextStatus) =>
@@ -481,81 +740,90 @@ export default function DashboardPage() {
                               size="sm"
                               className="hidden sm:inline-block"
                             />
-
-                            <Badge
-                              variant={STATUS_BADGE_VARIANTS[task.status]}
-                              dot
-                              className="sm:hidden"
-                            >
-                              {STATUS_LABELS[task.status]}
-                            </Badge>
-
-                            {/* Dropdown Actions */}
-                            <Dropdown
-                              trigger={
-                                <button
-                                  type="button"
-                                  className="rounded-lg p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition opacity-80 group-hover:opacity-100"
-                                  aria-label="Опції"
-                                >
-                                  <MoreVertical className="h-4 w-4" />
-                                </button>
-                              }
-                              items={[
-                                {
-                                  label: "До виконання",
-                                  icon: <ListTodo className="h-3.5 w-3.5" />,
-                                  onClick: () =>
-                                    updateTaskMutation.mutate({
-                                      id: task.id,
-                                      status: "todo",
-                                    }),
-                                },
-                                {
-                                  label: "В процесі",
-                                  icon: <Clock className="h-3.5 w-3.5" />,
-                                  onClick: () =>
-                                    updateTaskMutation.mutate({
-                                      id: task.id,
-                                      status: "in_progress",
-                                    }),
-                                },
-                                {
-                                  label: "Виконано",
-                                  icon: <CheckCircle2 className="h-3.5 w-3.5" />,
-                                  onClick: () =>
-                                    updateTaskMutation.mutate({
-                                      id: task.id,
-                                      status: "done",
-                                    }),
-                                },
-                                { type: "divider" },
-                                {
-                                  label: "Видалити",
-                                  icon: <Trash2 className="h-3.5 w-3.5" />,
-                                  danger: true,
-                                  onClick: () => deleteTaskMutation.mutate(task.id),
-                                },
-                              ]}
-                            />
                           </div>
                         </div>
 
+                        {/* Description Preview */}
                         {task.description && (
-                          <p className="text-xs text-zinc-500 dark:text-zinc-400 whitespace-pre-line leading-relaxed pr-6">
+                          <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2 leading-relaxed">
                             {task.description}
                           </p>
                         )}
 
-                        <div className="flex items-center gap-3 pt-1 text-[11px] text-zinc-400 dark:text-zinc-500">
-                          <span className="flex items-center gap-1">
-                            <Calendar className="h-3 w-3" />
-                            {new Date(task.createdAt).toLocaleDateString("uk-UA", {
-                              day: "numeric",
-                              month: "short",
-                            })}
-                          </span>
+                        {/* Badges footer: Due Date, Subtasks, Tags */}
+                        <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px]">
+                          {/* Due Date */}
+                          {task.dueDate && (
+                            <span className="inline-flex items-center gap-1 text-zinc-500 dark:text-zinc-400 font-medium">
+                              <Calendar className="h-3 w-3 text-indigo-500" />
+                              <span>{formatDueDate(task.dueDate)}</span>
+                            </span>
+                          )}
+
+                          {/* Subtasks Progress */}
+                          {totalSub > 0 && (
+                            <span className="inline-flex items-center gap-1 rounded-md bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-zinc-600 dark:text-zinc-300 font-medium">
+                              <ListChecks className="h-3 w-3 text-zinc-400" />
+                              <span>
+                                {completedSub}/{totalSub}
+                              </span>
+                            </span>
+                          )}
+
+                          {/* Tags */}
+                          {task.tags?.map((tag) => (
+                            <span
+                              key={tag.id || tag.name}
+                              className="inline-flex items-center gap-0.5 text-indigo-600 dark:text-indigo-400 font-medium bg-indigo-50 dark:bg-indigo-950/40 rounded px-1.5 py-0.5 text-[10px]"
+                            >
+                              #{tag.name}
+                            </span>
+                          ))}
                         </div>
+                      </div>
+
+                      {/* Hover action buttons */}
+                      <div
+                        className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition shrink-0 ml-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {isTrashView ? (
+                          <button
+                            type="button"
+                            onClick={() => restoreTaskMutation.mutate(task.id)}
+                            className="rounded-lg p-1 text-zinc-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition"
+                            title="Відновити з корзини"
+                          >
+                            <RotateCcw className="h-4 w-4" />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateTaskMutation.mutate({
+                                id: task.id,
+                                isArchived: !task.isArchived,
+                              })
+                            }
+                            className="rounded-lg p-1 text-zinc-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition"
+                            title={task.isArchived ? "Розархівувати" : "В архів"}
+                          >
+                            {task.isArchived ? (
+                              <ArchiveRestore className="h-4 w-4" />
+                            ) : (
+                              <Archive className="h-4 w-4" />
+                            )}
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => deleteTaskMutation.mutate(task.id)}
+                          className="rounded-lg p-1 text-zinc-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                          title={isTrashView ? "Очистити остаточно" : "В корзину"}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </div>
                     </motion.div>
                   );
@@ -566,72 +834,141 @@ export default function DashboardPage() {
         </main>
       </div>
 
-      {/* Adaptive Mobile Bottom Navigation */}
-      <MobileNav
-        activeList={activeList}
-        onSelectList={(listId) => {
-          setActiveList(listId);
-          setStatusFilter("all");
-        }}
-        onOpenCreateTask={() => setIsCreateModalOpen(true)}
-        onOpenProfile={handleLogout}
+      {/* Floating Batch Actions Toolbar */}
+      <BatchActionBar
+        selectedCount={selectedTaskIds.length}
+        onClearSelection={() => setSelectedTaskIds([])}
+        onBatchStatus={(status) =>
+          batchActionMutation.mutate({
+            taskIds: selectedTaskIds,
+            action: "status",
+            value: status,
+          })
+        }
+        onBatchPriority={(priority) =>
+          batchActionMutation.mutate({
+            taskIds: selectedTaskIds,
+            action: "priority",
+            value: priority,
+          })
+        }
+        onBatchArchive={() =>
+          batchActionMutation.mutate({
+            taskIds: selectedTaskIds,
+            action: isArchiveView ? "unarchive" : "archive",
+          })
+        }
+        onBatchDelete={() =>
+          batchActionMutation.mutate({
+            taskIds: selectedTaskIds,
+            action: isTrashView ? "permanentDelete" : "delete",
+          })
+        }
       />
 
-      {/* Modal for Creating New Task */}
+      {/* SlideOver Detailed Task View */}
+      <TaskSlideOver
+        key={selectedTask?.id}
+        task={selectedTask}
+        isOpen={Boolean(selectedTask)}
+        onClose={() => setSelectedTask(null)}
+        onUpdate={(fields) => updateTaskMutation.mutate(fields)}
+        onDelete={(id) => deleteTaskMutation.mutate(id)}
+        onRestore={(id) => restoreTaskMutation.mutate(id)}
+      />
+
+      {/* Full Modal for Manual Task Creation */}
       <Modal
         isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
+        onClose={() => {
+          setIsCreateModalOpen(false);
+          resetModalForm();
+        }}
         title="Нове завдання"
-        description="Запишіть деталі задачі для вашого списку справ"
+        description="Створіть детальне завдання з дедлайном, пріоритетом та тегами"
+        maxWidth="lg"
       >
-        <form onSubmit={handleCreateSubmit} className="space-y-4 mt-2">
+        <form onSubmit={handleModalSubmit} className="space-y-4 mt-2">
           <Input
             label="Назва завдання *"
-            placeholder="Наприклад: Підготувати звіт до понеділка"
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
+            placeholder="Наприклад: Підготувати квартальний звіт для команди"
+            value={modalTitle}
+            onChange={(e) => setModalTitle(e.target.value)}
             required
             autoFocus
           />
 
           <div className="space-y-1.5">
             <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400">
-              Опис (необов&apos;язково)
+              Опис / нотатки
             </label>
             <textarea
               rows={3}
-              placeholder="Додайте деталі, посилання або підказки..."
-              value={newDescription}
-              onChange={(e) => setNewDescription(e.target.value)}
+              placeholder="Додайте деталі, контекст або посилання..."
+              value={modalDescription}
+              onChange={(e) => setModalDescription(e.target.value)}
               className="w-full rounded-xl border border-zinc-200 dark:border-white/10 bg-white/70 dark:bg-zinc-900/60 p-3 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 outline-none backdrop-blur-md transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 resize-none"
             />
           </div>
 
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400">
-              Початковий статус
-            </label>
-            <CustomSelect
-              value={newStatus}
-              onChange={setNewStatus}
-              options={STATUS_OPTIONS}
-              className="w-full"
-              size="lg"
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400">
+                Статус
+              </label>
+              <CustomSelect
+                value={modalStatus}
+                onChange={setModalStatus}
+                options={STATUS_OPTIONS}
+                className="w-full"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400">
+                Пріоритет
+              </label>
+              <PrioritySelect
+                value={modalPriority}
+                onChange={setModalPriority}
+                className="w-full"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400">
+                Дедлайн
+              </label>
+              <DatePicker
+                value={modalDueDate}
+                onChange={setModalDueDate}
+                className="w-full"
+              />
+            </div>
           </div>
+
+          <Input
+            label="Теги (через кому)"
+            placeholder="#проєкт, #робота, #терміново"
+            value={modalTags}
+            onChange={(e) => setModalTags(e.target.value)}
+          />
 
           <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-zinc-200/60 dark:border-white/5">
             <Button
               type="button"
               variant="ghost"
-              onClick={() => setIsCreateModalOpen(false)}
+              onClick={() => {
+                setIsCreateModalOpen(false);
+                resetModalForm();
+              }}
             >
               Скасувати
             </Button>
             <Button
               type="submit"
               variant="primary"
-              disabled={!newTitle.trim() || createTaskMutation.isPending}
+              disabled={!modalTitle.trim() || createTaskMutation.isPending}
               loading={createTaskMutation.isPending}
               leftIcon={<Sparkles className="h-4 w-4" />}
             >
@@ -640,6 +977,18 @@ export default function DashboardPage() {
           </div>
         </form>
       </Modal>
+
+      {/* Adaptive Mobile Nav */}
+      <MobileNav
+        activeList={activeList}
+        onSelectList={(listId) => {
+          setActiveList(listId);
+          setStatusFilter("all");
+          setSelectedTaskIds([]);
+        }}
+        onOpenCreateTask={() => setIsCreateModalOpen(true)}
+        onOpenProfile={handleLogout}
+      />
     </div>
   );
 }
