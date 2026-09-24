@@ -18,6 +18,14 @@ import DatePicker from "@/components/ui/DatePicker";
 import PrioritySelect from "@/components/ui/PrioritySelect";
 import Badge from "@/components/ui/Badge";
 import { triggerConfetti } from "@/lib/celebrate";
+import api from "@/lib/api";
+import { useToast } from "@/providers/ToastProvider";
+import {
+  Sparkles,
+  Clock,
+  Flag,
+  Wand2,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const STATUS_OPTIONS = [
@@ -43,6 +51,11 @@ export default function TaskSlideOver({
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
   const [newTagInput, setNewTagInput] = useState("");
   const [tags, setTags] = useState(task?.tags || []);
+
+  // AI Assistant State
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [aiAnalysis, setAiAnalysis] = useState(null);
+  const toast = useToast();
 
   if (!task) return null;
 
@@ -106,6 +119,62 @@ export default function TaskSlideOver({
     const nextTags = tags.filter((t) => t.name !== tagName);
     setTags(nextTags);
     handleSaveField({ tags: nextTags });
+  }
+
+  async function handleRunAIAnalysis() {
+    setIsAnalyzing(true);
+    try {
+      const res = await api.post(`/tasks/${task.id}/ai-assist`, { apply: false });
+      setAiAnalysis(res.data?.analysis);
+      toast.success("AI аналіз завершено!", {
+        description:
+          res.data?.analysis?.source === "gemini"
+            ? "Згенеровано через Google Gemini AI"
+            : "Сформовано інтелектуальним асистентом",
+      });
+    } catch (err) {
+      toast.error("Помилка AI аналізу", {
+        description: err?.response?.data?.message || "Спробуйте ще раз",
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
+  }
+
+  function handleApplyAllAI() {
+    if (!aiAnalysis) return;
+
+    // Subtasks
+    const newItems = (aiAnalysis.subtasks || []).map((s, idx) => ({
+      id: Date.now() + idx,
+      title: s.title,
+      completed: false,
+    }));
+    const nextSubtasks = [...subtasks, ...newItems];
+    setSubtasks(nextSubtasks);
+
+    // Priority
+    const nextPriority = aiAnalysis.priority || priority;
+    setPriority(nextPriority);
+
+    // Tags
+    const existingNames = new Set(tags.map((t) => t.name?.toLowerCase()));
+    const additionalTags = (aiAnalysis.tags || [])
+      .filter((t) => !existingNames.has(t.toLowerCase()))
+      .map((name) => ({ name, color: "indigo" }));
+    const nextTags = [...tags, ...additionalTags];
+    setTags(nextTags);
+
+    // Persist
+    handleSaveField({
+      subtasks: nextSubtasks,
+      priority: nextPriority,
+      tags: nextTags,
+    });
+
+    triggerConfetti();
+    toast.success("AI пропозиції успішно застосовано!");
+    setAiAnalysis(null);
   }
 
   return (
@@ -216,6 +285,131 @@ export default function TaskSlideOver({
                       size="sm"
                     />
                   </div>
+                </div>
+
+                {/* AI Assistant Section */}
+                <div className="rounded-2xl border border-indigo-200/70 dark:border-indigo-800/50 bg-gradient-to-br from-indigo-50/60 via-purple-50/40 to-transparent dark:from-indigo-950/40 dark:via-purple-950/20 dark:to-transparent p-4 space-y-3 shadow-xs">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 text-white shadow-xs">
+                        <Sparkles className="h-3.5 w-3.5" />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+                          <span>AI Помічник</span>
+                          <span className="rounded bg-indigo-100 dark:bg-indigo-900/80 px-1 py-0.2 text-[9px] font-bold text-indigo-700 dark:text-indigo-300">
+                            Gemini
+                          </span>
+                        </h4>
+                        <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
+                          Декомпозиція, оцінка часу та підбір тегів
+                        </p>
+                      </div>
+                    </div>
+
+                    <Button
+                      variant="primary"
+                      size="xs"
+                      onClick={handleRunAIAnalysis}
+                      disabled={isAnalyzing}
+                      loading={isAnalyzing}
+                      leftIcon={<Wand2 className="h-3 w-3" />}
+                    >
+                      {aiAnalysis ? "Повторити" : "Декомпозувати"}
+                    </Button>
+                  </div>
+
+                  {/* AI Analysis Preview if available */}
+                  {aiAnalysis && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="pt-2 border-t border-indigo-200/50 dark:border-indigo-800/40 space-y-2.5 text-xs"
+                    >
+                      {/* Estimate & Priority recommendation */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="rounded-xl bg-white/80 dark:bg-zinc-900/80 p-2.5 border border-indigo-100 dark:border-white/5 space-y-1">
+                          <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1">
+                            <Clock className="h-3 w-3 text-indigo-500" /> Оцінка часу
+                          </span>
+                          <p className="font-extrabold text-sm text-zinc-900 dark:text-zinc-100">
+                            {aiAnalysis.estimate?.formatted || "45 хв"}
+                          </p>
+                          <p className="text-[10px] text-zinc-500 dark:text-zinc-400 leading-tight">
+                            {aiAnalysis.estimate?.reasoning}
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl bg-white/80 dark:bg-zinc-900/80 p-2.5 border border-indigo-100 dark:border-white/5 space-y-1">
+                          <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1">
+                            <Flag className="h-3 w-3 text-amber-500" /> Пріоритет
+                          </span>
+                          <p className="font-extrabold text-sm text-zinc-900 dark:text-zinc-100">
+                            {PRIORITY_CONFIG[aiAnalysis.priority]?.label || "Середній"}
+                          </p>
+                          <p className="text-[10px] text-zinc-500 dark:text-zinc-400 leading-tight">
+                            {aiAnalysis.priorityReason}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Decomposed Subtasks list */}
+                      {aiAnalysis.subtasks?.length > 0 && (
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                            Запропоновані кроки ({aiAnalysis.subtasks.length}):
+                          </span>
+                          <ul className="space-y-1 pl-1">
+                            {aiAnalysis.subtasks.map((st, sIdx) => (
+                              <li
+                                key={sIdx}
+                                className="flex items-center gap-2 text-[11px] text-zinc-700 dark:text-zinc-300"
+                              >
+                                <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 shrink-0" />
+                                <span>{st.title}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Suggested tags */}
+                      {aiAnalysis.tags?.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                          <span className="text-[10px] text-zinc-400 font-medium">
+                            Теги:
+                          </span>
+                          {aiAnalysis.tags.map((t) => (
+                            <span
+                              key={t}
+                              className="rounded bg-indigo-100/70 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 text-[10px] font-medium"
+                            >
+                              #{t}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Action buttons */}
+                      <div className="flex items-center justify-end gap-2 pt-1">
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          onClick={() => setAiAnalysis(null)}
+                        >
+                          Сховати
+                        </Button>
+                        <Button
+                          variant="primary"
+                          size="xs"
+                          onClick={handleApplyAllAI}
+                          leftIcon={<Check className="h-3 w-3" />}
+                        >
+                          Застосувати все до завдання
+                        </Button>
+                      </div>
+                    </motion.div>
+                  )}
                 </div>
 
                 {/* Subtasks Section with Progress Bar */}

@@ -128,6 +128,7 @@ export default function DashboardPage() {
   const [modalDueDate, setModalDueDate] = useState(null);
   const [modalStatus, setModalStatus] = useState("todo");
   const [modalTags, setModalTags] = useState("");
+  const [isAiSuggesting, setIsAiSuggesting] = useState(false);
 
   // Productivity Modals State
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
@@ -287,6 +288,37 @@ export default function DashboardPage() {
     setModalDueDate(null);
     setModalStatus("todo");
     setModalTags("");
+    setIsAiSuggesting(false);
+  }
+
+  async function handleAiSuggestModal() {
+    if (!modalTitle.trim()) return;
+    setIsAiSuggesting(true);
+    try {
+      const res = await api.post("/tasks/ai-suggest", {
+        title: modalTitle.trim(),
+        description: modalDescription.trim(),
+      });
+      const analysis = res.data?.analysis;
+      if (analysis) {
+        if (analysis.priority && modalPriority === "none") {
+          setModalPriority(analysis.priority);
+        }
+        if (analysis.tags?.length > 0 && !modalTags.trim()) {
+          setModalTags(analysis.tags.map((t) => `#${t}`).join(", "));
+        }
+        if (analysis.estimate?.reasoning && !modalDescription.trim()) {
+          setModalDescription(`Оцінка часу: ${analysis.estimate.formatted} (${analysis.estimate.reasoning})`);
+        }
+        toast.success("AI заповнив параметри завдання!", {
+          description: analysis.source === "gemini" ? "Google Gemini AI" : "Інтелектуальний асистент",
+        });
+      }
+    } catch {
+      toast.error("Не вдалося отримати AI підказки");
+    } finally {
+      setIsAiSuggesting(false);
+    }
   }
 
   // Handle unauthorized redirects
@@ -1124,14 +1156,29 @@ export default function DashboardPage() {
         maxWidth="lg"
       >
         <form onSubmit={handleModalSubmit} className="space-y-4 mt-2">
-          <Input
-            label="Назва завдання *"
-            placeholder="Наприклад: Підготувати квартальний звіт для команди"
-            value={modalTitle}
-            onChange={(e) => setModalTitle(e.target.value)}
-            required
-            autoFocus
-          />
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400">
+                Назва завдання *
+              </label>
+              <button
+                type="button"
+                onClick={handleAiSuggestModal}
+                disabled={!modalTitle.trim() || isAiSuggesting}
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 disabled:opacity-40 transition"
+              >
+                <Sparkles className="h-3 w-3" />
+                <span>{isAiSuggesting ? "Аналіз..." : "AI автозаповнення"}</span>
+              </button>
+            </div>
+            <Input
+              placeholder="Наприклад: Підготувати квартальний звіт для команди"
+              value={modalTitle}
+              onChange={(e) => setModalTitle(e.target.value)}
+              required
+              autoFocus
+            />
+          </div>
 
           <div className="space-y-1.5">
             <label className="block text-xs font-semibold text-zinc-600 dark:text-zinc-400">
