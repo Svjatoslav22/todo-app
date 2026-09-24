@@ -1,29 +1,33 @@
-const { verifyToken } = require("../utils/jwt");
+const { verifyAccessToken } = require("../utils/jwt");
+const { UnauthorizedError } = require("../utils/errors");
 
 function authMiddleware(req, res, next) {
   const header = req.headers.authorization;
 
   if (!header || !header.startsWith("Bearer ")) {
-    return res.status(401).json({ message: "Unauthorized" });
+    return next(new UnauthorizedError("Токен авторизації відсутній"));
   }
 
   const token = header.slice("Bearer ".length).trim();
 
   if (!token) {
-    return res.status(401).json({ message: "Unauthorized" });
+    return next(new UnauthorizedError("Токен авторизації порожній"));
   }
 
   try {
-    const decoded = verifyToken(token);
+    const decoded = verifyAccessToken(token);
 
     if (decoded.id == null) {
-      return res.status(401).json({ message: "Unauthorized" });
+      return next(new UnauthorizedError("Недійсні дані токена"));
     }
 
     req.user = { id: decoded.id };
-    next();
-  } catch {
-    return res.status(401).json({ message: "Unauthorized" });
+    return next();
+  } catch (err) {
+    if (err.name === "TokenExpiredError") {
+      return next(new UnauthorizedError("Термін дії токена закінчився"));
+    }
+    return next(new UnauthorizedError("Недійсний токен авторизації"));
   }
 }
 

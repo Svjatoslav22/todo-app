@@ -1,114 +1,134 @@
 const prisma = require("../lib/prisma");
 const { hashPassword, comparePassword } = require("../utils/password");
-const { signToken } = require("../utils/jwt");
-
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function normalizeEmail(email) {
-  return typeof email === "string" ? email.trim().toLowerCase() : "";
-}
-
-function validateAuthPayload(email, password) {
-  if (!email || !password) {
-    return "Email and password are required";
-  }
-
-  if (!EMAIL_REGEX.test(email)) {
-    return "Invalid email format";
-  }
-
-  if (typeof password !== "string" || password.length < 6) {
-    return "Password must be at least 6 characters";
-  }
-
-  return null;
-}
+const {
+  signAccessToken,
+  signRefreshToken,
+  verifyRefreshToken,
+  REFRESH_COOKIE_NAME,
+  REFRESH_COOKIE_OPTIONS,
+} = require("../utils/jwt");
+const {
+  UnauthorizedError,
+  ConflictError,
+} = require("../utils/errors");
+const asyncHandler = require("../utils/asyncHandler");
 
 function publicUser(user) {
-  return { id: user.id, email: user.email };
+  return { id: user.id, email: user.email, createdAt: user.createdAt };
 }
 
-async function register(req, res) {
-  try {
-    const email = normalizeEmail(req.body?.email);
-    const password = req.body?.password;
-    const error = validateAuthPayload(email, password);
+function setAuthCookies(res, refreshToken) {
+  res.cookie(REFRESH_COOKIE_NAME, refreshToken, REFRESH_COOKIE_OPTIONS);
+}
 
-    if (error) {
-      return res.status(400).json({ message: error });
-    }
+const register = asyncHandler(async (req, res) => {
+  const { email, password } = req.body;
 
-    const existingUser = await prisma.user.findUnique({ where: { email } });
-
-    if (existingUser) {
-      return res.status(409).json({ message: "Email already in use" });
-    }
-
-    const user = await prisma.user.create({
-      data: {
-        email,
-        password: await hashPassword(password),
-      },
-    });
-
-    return res.status(201).json({
-      token: signToken({ id: user.id }),
-      user: publicUser(user),
-    });
-  } catch (error) {
-    if (error.code === "P2002") {
-      return res.status(409).json({ message: "Email already in use" });
-    }
-
-    console.error(error);
-    return res.status(500).json({ message: "Internal server error" });
+  const existingUser = await prisma.user.findUnique({ where: { email } });
+  if (existingUser) {
+    throw new ConflictError("Користувач із таким email вже зареєстрований");
   }
-}
 
-async function login(req, res) {
-  try {
-    const email = normalizeEmail(req.body?.email);
-    const password = req.body?.password;
-    const error = validateAuthPayload(email, password);
+  const user = await prisma.user.create({
+    data: {
+      email,
+      password: await hashPassword(password),
+    },
+  });
 
-    if (error) {
-      return res.status(400).json({ message: error });
-    }
+  const accessToken = signAccessToken({ id: user.id });
+  const refreshToken = signRefreshToken({ id: user.id });
 
-    const user = await prisma.user.findUnique({ where: { email } });
-    const passwordMatches =
-      user && (await comparePassword(password, user.password));
+  setAuthCookies(res, refreshToken);
 
-    if (!passwordMatches) {
-      return res.status(401).json({ message: "Invalid email or password" });
-    }
+  return res.status(201).json({
+    token: accessToken,
+    accessToken,
+    user: publicUser(user),
+  });
+});
 
-    return res.json({
-      token: signToken({ id: user.id }),
-      user: publicUser(user),
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ message: "Internal server error" });
+const login = asyncHandler(async (req, res) => {
+  const { email, password } = req.body;
+
+  const user = await prisma.user.findUnique({ where: { email } });
+  const passwordMatches =
+    user && (await comparePassword(password, user.password));
+
+  if (!passwordMatches) {
+    throw new UnauthorizedError("Невірний email або пароль");
   }
-}
 
-async function me(req, res) {
-  try {
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id },
-      select: { id: true, email: true },
-    });
+  const accessToken = signAccessToken({ id: user.id });
+  const refreshToken = signRefreshToken({ id: user.id });
 
-    if (!user) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
+  setAuthCookies(res, refreshToken);
 
-    return res.json({ user });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ message: "Internal server error" });
+  return res.json({
+    token: accessToken,
+    accessToken,
+    user: publicUser(user),
+  });
+});
+
+const refresh = asyncHandler(async (req, res) => {
+  const token = req.cookies?.[REFRESH_COOKIE_NAME] || req.body?.refreshToken;
+
+  if (!token) {
+    throw new UnauthorizedError("Сесія закінчилась або токен оновлення відсутній");
   }
-}
 
-module.exports = { register, login, me };
+  let decoded;
+  try {
+    decoded = verifyRefreshToken(token);
+  } catch (_err) {
+    res.clearCookie(REFRESH_COOKIE_NAME, REFRESH_COOKIE_OPTIONS);
+    throw new UnauthorizedError("Недійсний або прострочений токен оновлення");
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: decoded.id },
+  });
+
+  if (!user) {
+    res.clearCookie(REFRESH_COOKIE_NAME, REFRESH_COOKIE_OPTIONS);
+    throw new UnauthorizedError("Користувача більше не існує");
+  }
+
+  const newAccessToken = signAccessToken({ id: user.id });
+  const newRefreshToken = signRefreshToken({ id: user.id });
+
+  setAuthCookies(res, newRefreshToken);
+
+  return res.json({
+    token: newAccessToken,
+    accessToken: newAccessToken,
+    user: publicUser(user),
+  });
+});
+
+const logout = asyncHandler(async (_req, res) => {
+  res.clearCookie(REFRESH_COOKIE_NAME, REFRESH_COOKIE_OPTIONS);
+  return res.json({ message: "Успішний вихід із системи" });
+});
+
+const me = asyncHandler(async (req, res) => {
+  const user = await prisma.user.findUnique({
+    where: { id: req.user.id },
+    select: { id: true, email: true, createdAt: true },
+  });
+
+  if (!user) {
+    throw new UnauthorizedError("Користувача не знайдено");
+  }
+
+  return res.json({ user });
+});
+
+module.exports = {
+  register,
+  login,
+  refresh,
+  logout,
+  me,
+};
