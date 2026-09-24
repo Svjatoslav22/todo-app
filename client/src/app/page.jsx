@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Plus,
   Trash2,
   CheckCircle2,
   Clock,
@@ -18,7 +17,6 @@ import {
   RotateCcw,
   CheckSquare,
   Square,
-  Tag as TagIcon,
   Flag,
   ListChecks,
 } from "lucide-react";
@@ -34,11 +32,14 @@ import PrioritySelect, {
   PRIORITY_CONFIG,
   PRIORITY_OPTIONS,
 } from "@/components/ui/PrioritySelect";
-import Badge from "@/components/ui/Badge";
 import EmptyState from "@/components/ui/EmptyState";
 import { TaskSkeleton } from "@/components/ui/Skeleton";
 import TaskSlideOver from "@/components/tasks/TaskSlideOver";
 import BatchActionBar from "@/components/tasks/BatchActionBar";
+import ViewSwitcher from "@/components/views/ViewSwitcher";
+import KanbanView from "@/components/views/KanbanView";
+import CalendarView from "@/components/views/CalendarView";
+import TimelineView from "@/components/views/TimelineView";
 import Modal from "@/components/ui/Modal";
 import { useToast } from "@/providers/ToastProvider";
 import { parseNaturalLanguageTask } from "@/lib/taskParser";
@@ -62,12 +63,6 @@ const STATUS_OPTIONS = [
   },
 ];
 
-const STATUS_BADGE_VARIANTS = {
-  todo: "zinc",
-  in_progress: "amber",
-  done: "emerald",
-};
-
 const STATUS_LABELS = {
   todo: "До виконання",
   in_progress: "В процесі",
@@ -83,6 +78,31 @@ export default function DashboardPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Views & Grouping state with lazy persistence initialization
+  const [viewMode, setViewMode] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("todo-view-mode") || "list";
+    }
+    return "list";
+  });
+
+  const [groupBy, setGroupBy] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("todo-group-by") || "none";
+    }
+    return "none";
+  });
+
+  function handleViewModeChange(mode) {
+    setViewMode(mode);
+    localStorage.setItem("todo-view-mode", mode);
+  }
+
+  function handleGroupByChange(group) {
+    setGroupBy(group);
+    localStorage.setItem("todo-group-by", group);
+  }
 
   // SlideOver task details state
   const [selectedTask, setSelectedTask] = useState(null);
@@ -120,7 +140,7 @@ export default function DashboardPage() {
 
   const isAuthenticated = Boolean(meQuery.data);
 
-  // Tasks Query (fetches all active, archived, and deleted)
+  // Tasks Query
   const isTrashView = activeList === "trash";
   const isArchiveView = activeList === "archive";
 
@@ -319,6 +339,16 @@ export default function DashboardPage() {
     });
   }
 
+  function handleOpenCreateWithStatus(colStatus) {
+    setModalStatus(colStatus);
+    setIsCreateModalOpen(true);
+  }
+
+  function handleOpenCreateWithDate(targetDate) {
+    setModalDueDate(targetDate.toISOString());
+    setIsCreateModalOpen(true);
+  }
+
   // Toggle single item selection
   function handleToggleSelect(id, e) {
     e?.stopPropagation();
@@ -379,6 +409,99 @@ export default function DashboardPage() {
 
     return true;
   });
+
+  // Grouped tasks calculation for List View
+  const groupedTasks = useMemo(() => {
+    if (groupBy === "none") {
+      return [{ id: "all", title: null, tasks: filteredTasks }];
+    }
+
+    if (groupBy === "status") {
+      return [
+        {
+          id: "todo",
+          title: "До виконання",
+          tasks: filteredTasks.filter((t) => t.status === "todo"),
+        },
+        {
+          id: "in_progress",
+          title: "В процесі",
+          tasks: filteredTasks.filter((t) => t.status === "in_progress"),
+        },
+        {
+          id: "done",
+          title: "Виконано",
+          tasks: filteredTasks.filter((t) => t.status === "done"),
+        },
+      ].filter((g) => g.tasks.length > 0);
+    }
+
+    if (groupBy === "priority") {
+      return [
+        {
+          id: "urgent",
+          title: "Термінові (P1)",
+          tasks: filteredTasks.filter((t) => t.priority === "urgent"),
+        },
+        {
+          id: "high",
+          title: "Високий (P2)",
+          tasks: filteredTasks.filter((t) => t.priority === "high"),
+        },
+        {
+          id: "medium",
+          title: "Середній (P3)",
+          tasks: filteredTasks.filter((t) => t.priority === "medium"),
+        },
+        {
+          id: "low",
+          title: "Низький (P4)",
+          tasks: filteredTasks.filter((t) => t.priority === "low"),
+        },
+        {
+          id: "none",
+          title: "Без пріоритету",
+          tasks: filteredTasks.filter((t) => t.priority === "none"),
+        },
+      ].filter((g) => g.tasks.length > 0);
+    }
+
+    if (groupBy === "date") {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const overdue = [];
+      const todayTasks = [];
+      const tomorrowTasks = [];
+      const upcoming = [];
+      const noDate = [];
+
+      filteredTasks.forEach((t) => {
+        if (!t.dueDate) {
+          noDate.push(t);
+          return;
+        }
+        const d = new Date(t.dueDate);
+        d.setHours(0, 0, 0, 0);
+        const diff = Math.round((d - today) / (1000 * 60 * 60 * 24));
+
+        if (diff < 0 && t.status !== "done") overdue.push(t);
+        else if (diff === 0) todayTasks.push(t);
+        else if (diff === 1) tomorrowTasks.push(t);
+        else upcoming.push(t);
+      });
+
+      return [
+        { id: "overdue", title: "Прострочені", tasks: overdue },
+        { id: "today", title: "Сьогодні", tasks: todayTasks },
+        { id: "tomorrow", title: "Завтра", tasks: tomorrowTasks },
+        { id: "upcoming", title: "Найближчим часом", tasks: upcoming },
+        { id: "noDate", title: "Без дедлайну", tasks: noDate },
+      ].filter((g) => g.tasks.length > 0);
+    }
+
+    return [{ id: "all", title: null, tasks: filteredTasks }];
+  }, [filteredTasks, groupBy]);
 
   // Counts for smart lists
   const taskCounts = useMemo(() => {
@@ -455,8 +578,8 @@ export default function DashboardPage() {
           onOpenCreateTask={() => setIsCreateModalOpen(true)}
         />
 
-        <main className="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-8 py-6 space-y-5">
-          {/* Smart Natural Language Quick Creation Bar */}
+        <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-8 py-6 space-y-5">
+          {/* Quick Smart Input Bar */}
           {!isTrashView && !isArchiveView && (
             <div className="relative rounded-2xl border border-zinc-200/80 dark:border-white/10 bg-white/70 dark:bg-zinc-900/60 p-2.5 shadow-sm backdrop-blur-xl transition focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20">
               <form onSubmit={handleQuickSubmit} className="space-y-2">
@@ -468,7 +591,7 @@ export default function DashboardPage() {
                   <input
                     ref={inputRef}
                     type="text"
-                    placeholder="Розумне введення: наприклад «Купити каву завтра о 10 !високий #робота»..."
+                    placeholder="Швидке створення: наприклад «Підготувати звіт завтра о 10 !високий #робота»..."
                     value={quickInput}
                     onChange={(e) => setQuickInput(e.target.value)}
                     className="flex-1 bg-transparent px-2 py-1 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 outline-none"
@@ -485,7 +608,7 @@ export default function DashboardPage() {
                   </Button>
                 </div>
 
-                {/* Natural language detected badges preview */}
+                {/* Natural language detected badges */}
                 {quickInput.trim() && (
                   <div className="flex flex-wrap items-center gap-2 px-2 pt-1 border-t border-zinc-100 dark:border-white/5 text-xs">
                     <span className="text-[11px] font-medium text-zinc-400">
@@ -511,7 +634,7 @@ export default function DashboardPage() {
                         key={t}
                         className="inline-flex items-center gap-1 rounded-md bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 px-2 py-0.5 font-medium border border-purple-200/60 dark:border-purple-800/40"
                       >
-                        <TagIcon className="h-3 w-3" />#{t}
+                        #{t}
                       </span>
                     ))}
                   </div>
@@ -520,7 +643,15 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Filter Bar and Mass Select Checkbox */}
+          {/* View Mode Switcher & Grouping Controls */}
+          <ViewSwitcher
+            currentView={viewMode}
+            onViewChange={handleViewModeChange}
+            groupBy={groupBy}
+            onGroupByChange={handleGroupByChange}
+          />
+
+          {/* Filters Bar (when in list or kanban) */}
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200/60 dark:border-white/5 pb-3">
             <div className="flex items-center gap-2">
               <button
@@ -573,7 +704,7 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Priority filter dropdown */}
+            {/* Priority filter */}
             <div className="flex items-center gap-2">
               <CustomSelect
                 value={priorityFilter}
@@ -590,247 +721,286 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Task List */}
-          <div className="space-y-2.5">
-            {tasksQuery.isLoading ? (
-              <div className="space-y-3">
-                <TaskSkeleton />
-                <TaskSkeleton />
-                <TaskSkeleton />
-              </div>
-            ) : filteredTasks.length === 0 ? (
-              <EmptyState
-                title={
-                  searchQuery
-                    ? "Нічого не знайдено"
-                    : isTrashView
-                    ? "Корзина порожня"
-                    : isArchiveView
-                    ? "Архів порожній"
-                    : "Немає завдань у цьому списку"
-                }
-                description={
-                  searchQuery
-                    ? `За запитом «${searchQuery}» результатів немає.`
-                    : isTrashView
-                    ? "Усі видалені завдання з'являтимуться тут для відновлення."
-                    : isArchiveView
-                    ? "Тут зберігаються завершені проєкти та архівовані задачі."
-                    : "Створіть завдання за допомогою рядка швидкого введення вище або кнопки 'N'."
-                }
-                actionLabel={!isTrashView && !isArchiveView ? "Створити завдання" : undefined}
-                onAction={
-                  !isTrashView && !isArchiveView
-                    ? () => setIsCreateModalOpen(true)
-                    : undefined
-                }
-              />
-            ) : (
-              <AnimatePresence mode="popLayout">
-                {filteredTasks.map((task) => {
-                  const isDone = task.status === "done";
-                  const isSelected = selectedTaskIds.includes(task.id);
-                  const pConfig = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.none;
-                  const totalSub = task.subtasks?.length || 0;
-                  const completedSub = task.subtasks?.filter((s) => s.completed).length || 0;
+          {/* Main Views Container */}
+          {tasksQuery.isLoading ? (
+            <div className="space-y-3">
+              <TaskSkeleton />
+              <TaskSkeleton />
+              <TaskSkeleton />
+            </div>
+          ) : viewMode === "kanban" ? (
+            /* Kanban View */
+            <KanbanView
+              tasks={filteredTasks}
+              onSelectTask={setSelectedTask}
+              onUpdateStatus={(id, status) =>
+                updateTaskMutation.mutate({ id, status })
+              }
+              onOpenCreateWithStatus={handleOpenCreateWithStatus}
+            />
+          ) : viewMode === "calendar" ? (
+            /* Calendar View */
+            <CalendarView
+              tasks={filteredTasks}
+              onSelectTask={setSelectedTask}
+              onCreateOnDate={handleOpenCreateWithDate}
+            />
+          ) : viewMode === "timeline" ? (
+            /* Timeline View */
+            <TimelineView
+              tasks={filteredTasks}
+              onSelectTask={setSelectedTask}
+            />
+          ) : (
+            /* List View (with optional grouping) */
+            <div className="space-y-6">
+              {filteredTasks.length === 0 ? (
+                <EmptyState
+                  title={
+                    searchQuery
+                      ? "Нічого не знайдено"
+                      : isTrashView
+                      ? "Корзина порожня"
+                      : isArchiveView
+                      ? "Архів порожній"
+                      : "Немає завдань у цьому списку"
+                  }
+                  description={
+                    searchQuery
+                      ? `За запитом «${searchQuery}» результатів немає.`
+                      : isTrashView
+                      ? "Усі видалені завдання зберігаються тут із можливістю відновлення."
+                      : isArchiveView
+                      ? "Тут зберігаються завершені проєкти та архівовані задачі."
+                      : "Створіть перше завдання та почніть день продуктивно!"
+                  }
+                  actionLabel={!isTrashView && !isArchiveView ? "Створити завдання" : undefined}
+                  onAction={
+                    !isTrashView && !isArchiveView
+                      ? () => setIsCreateModalOpen(true)
+                      : undefined
+                  }
+                />
+              ) : (
+                groupedTasks.map((group) => (
+                  <div key={group.id} className="space-y-2.5">
+                    {group.title && (
+                      <div className="flex items-center gap-2 px-1 pt-2">
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                          {group.title}
+                        </h3>
+                        <span className="rounded-full bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-[10px] font-bold text-zinc-500">
+                          {group.tasks.length}
+                        </span>
+                      </div>
+                    )}
 
-                  return (
-                    <motion.div
-                      key={task.id}
-                      layout
-                      initial={{ opacity: 0, y: 10, scale: 0.98 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      transition={{ type: "spring", stiffness: 450, damping: 35 }}
-                      onClick={() => setSelectedTask(task)}
-                      className={cn(
-                        "group relative flex items-start gap-3 rounded-2xl border p-4 transition-all duration-150 backdrop-blur-xl shadow-xs cursor-pointer select-none",
-                        isSelected &&
-                          "border-indigo-500/80 bg-indigo-50/20 dark:bg-indigo-950/20 ring-1 ring-indigo-500/30",
-                        !isSelected && isDone
-                          ? "border-zinc-200/50 dark:border-white/5 bg-zinc-50/50 dark:bg-zinc-950/40 opacity-75"
-                          : !isSelected &&
-                              "border-zinc-200/80 dark:border-white/10 bg-white/80 dark:bg-zinc-900/60 hover:border-zinc-300 dark:hover:border-white/20 hover:shadow-md"
-                      )}
-                    >
-                      {/* Selection checkbox */}
-                      <button
-                        type="button"
-                        onClick={(e) => handleToggleSelect(task.id, e)}
-                        className={cn(
-                          "mt-0.5 rounded-lg p-0.5 transition",
-                          isSelected
-                            ? "text-indigo-600 dark:text-indigo-400"
-                            : "text-zinc-300 dark:text-zinc-600 opacity-0 group-hover:opacity-100"
-                        )}
-                        aria-label="Вибрати"
-                      >
-                        {isSelected ? (
-                          <CheckSquare className="h-4 w-4" />
-                        ) : (
-                          <Square className="h-4 w-4" />
-                        )}
-                      </button>
+                    <AnimatePresence mode="popLayout">
+                      {group.tasks.map((task) => {
+                        const isDone = task.status === "done";
+                        const isSelected = selectedTaskIds.includes(task.id);
+                        const pConfig =
+                          PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.none;
+                        const totalSub = task.subtasks?.length || 0;
+                        const completedSub =
+                          task.subtasks?.filter((s) => s.completed).length || 0;
 
-                      {/* Status toggle checkbox */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          updateTaskMutation.mutate({
-                            id: task.id,
-                            status: isDone ? "todo" : "done",
-                          });
-                        }}
-                        className={cn(
-                          "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-lg border transition duration-150 active:scale-90",
-                          isDone
-                            ? "bg-emerald-500 border-emerald-500 text-white shadow-xs"
-                            : "border-zinc-300 dark:border-zinc-700 hover:border-indigo-500 text-transparent"
-                        )}
-                        aria-label={isDone ? "Невиконано" : "Виконано"}
-                      >
-                        <Check className="h-3.5 w-3.5 stroke-[3]" />
-                      </button>
-
-                      {/* Task Info Body */}
-                      <div className="flex-1 min-w-0 space-y-1">
-                        <div className="flex items-start justify-between gap-3">
-                          <h3
+                        return (
+                          <motion.div
+                            key={task.id}
+                            layout
+                            initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            transition={{ type: "spring", stiffness: 450, damping: 35 }}
+                            onClick={() => setSelectedTask(task)}
                             className={cn(
-                              "text-sm font-semibold tracking-tight transition",
-                              isDone
-                                ? "line-through text-zinc-400 dark:text-zinc-500"
-                                : "text-zinc-900 dark:text-zinc-100"
+                              "group relative flex items-start gap-3 rounded-2xl border p-4 transition-all duration-150 backdrop-blur-xl shadow-xs cursor-pointer select-none",
+                              isSelected &&
+                                "border-indigo-500/80 bg-indigo-50/20 dark:bg-indigo-950/20 ring-1 ring-indigo-500/30",
+                              !isSelected && isDone
+                                ? "border-zinc-200/50 dark:border-white/5 bg-zinc-50/50 dark:bg-zinc-950/40 opacity-75"
+                                : !isSelected &&
+                                    "border-zinc-200/80 dark:border-white/10 bg-white/80 dark:bg-zinc-900/60 hover:border-zinc-300 dark:hover:border-white/20 hover:shadow-md"
                             )}
                           >
-                            {task.title}
-                          </h3>
+                            {/* Selection checkbox */}
+                            <button
+                              type="button"
+                              onClick={(e) => handleToggleSelect(task.id, e)}
+                              className={cn(
+                                "mt-0.5 rounded-lg p-0.5 transition",
+                                isSelected
+                                  ? "text-indigo-600 dark:text-indigo-400"
+                                  : "text-zinc-300 dark:text-zinc-600 opacity-0 group-hover:opacity-100"
+                              )}
+                              aria-label="Вибрати"
+                            >
+                              {isSelected ? (
+                                <CheckSquare className="h-4 w-4" />
+                              ) : (
+                                <Square className="h-4 w-4" />
+                              )}
+                            </button>
 
-                          {/* Top right badges & quick options */}
-                          <div
-                            className="shrink-0 flex items-center gap-1.5"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {/* Priority Flag */}
-                            {task.priority !== "none" && (
-                              <span
-                                className={cn(
-                                  "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold border",
-                                  pConfig.bg
-                                )}
-                              >
-                                <Flag
-                                  className={cn("h-3 w-3", pConfig.fill, pConfig.color)}
-                                />
-                                <span>{pConfig.badgeLabel}</span>
-                              </span>
-                            )}
-
-                            {/* Status Select */}
-                            <CustomSelect
-                              value={task.status}
-                              onChange={(nextStatus) =>
+                            {/* Status checkbox */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 updateTaskMutation.mutate({
                                   id: task.id,
-                                  status: nextStatus,
-                                })
-                              }
-                              options={STATUS_OPTIONS}
-                              size="sm"
-                              className="hidden sm:inline-block"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Description Preview */}
-                        {task.description && (
-                          <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2 leading-relaxed">
-                            {task.description}
-                          </p>
-                        )}
-
-                        {/* Badges footer: Due Date, Subtasks, Tags */}
-                        <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px]">
-                          {/* Due Date */}
-                          {task.dueDate && (
-                            <span className="inline-flex items-center gap-1 text-zinc-500 dark:text-zinc-400 font-medium">
-                              <Calendar className="h-3 w-3 text-indigo-500" />
-                              <span>{formatDueDate(task.dueDate)}</span>
-                            </span>
-                          )}
-
-                          {/* Subtasks Progress */}
-                          {totalSub > 0 && (
-                            <span className="inline-flex items-center gap-1 rounded-md bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-zinc-600 dark:text-zinc-300 font-medium">
-                              <ListChecks className="h-3 w-3 text-zinc-400" />
-                              <span>
-                                {completedSub}/{totalSub}
-                              </span>
-                            </span>
-                          )}
-
-                          {/* Tags */}
-                          {task.tags?.map((tag) => (
-                            <span
-                              key={tag.id || tag.name}
-                              className="inline-flex items-center gap-0.5 text-indigo-600 dark:text-indigo-400 font-medium bg-indigo-50 dark:bg-indigo-950/40 rounded px-1.5 py-0.5 text-[10px]"
+                                  status: isDone ? "todo" : "done",
+                                });
+                              }}
+                              className={cn(
+                                "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-lg border transition duration-150 active:scale-90",
+                                isDone
+                                  ? "bg-emerald-500 border-emerald-500 text-white shadow-xs"
+                                  : "border-zinc-300 dark:border-zinc-700 hover:border-indigo-500 text-transparent"
+                              )}
+                              aria-label={isDone ? "Невиконано" : "Виконано"}
                             >
-                              #{tag.name}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
+                              <Check className="h-3.5 w-3.5 stroke-[3]" />
+                            </button>
 
-                      {/* Hover action buttons */}
-                      <div
-                        className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition shrink-0 ml-2"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {isTrashView ? (
-                          <button
-                            type="button"
-                            onClick={() => restoreTaskMutation.mutate(task.id)}
-                            className="rounded-lg p-1 text-zinc-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition"
-                            title="Відновити з корзини"
-                          >
-                            <RotateCcw className="h-4 w-4" />
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              updateTaskMutation.mutate({
-                                id: task.id,
-                                isArchived: !task.isArchived,
-                              })
-                            }
-                            className="rounded-lg p-1 text-zinc-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition"
-                            title={task.isArchived ? "Розархівувати" : "В архів"}
-                          >
-                            {task.isArchived ? (
-                              <ArchiveRestore className="h-4 w-4" />
-                            ) : (
-                              <Archive className="h-4 w-4" />
-                            )}
-                          </button>
-                        )}
+                            {/* Info */}
+                            <div className="flex-1 min-w-0 space-y-1">
+                              <div className="flex items-start justify-between gap-3">
+                                <h3
+                                  className={cn(
+                                    "text-sm font-semibold tracking-tight transition",
+                                    isDone
+                                      ? "line-through text-zinc-400 dark:text-zinc-500"
+                                      : "text-zinc-900 dark:text-zinc-100"
+                                  )}
+                                >
+                                  {task.title}
+                                </h3>
 
-                        <button
-                          type="button"
-                          onClick={() => deleteTaskMutation.mutate(task.id)}
-                          className="rounded-lg p-1 text-zinc-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
-                          title={isTrashView ? "Очистити остаточно" : "В корзину"}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
-            )}
-          </div>
+                                <div
+                                  className="shrink-0 flex items-center gap-1.5"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {task.priority !== "none" && (
+                                    <span
+                                      className={cn(
+                                        "inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold border",
+                                        pConfig.bg
+                                      )}
+                                    >
+                                      <Flag
+                                        className={cn(
+                                          "h-3 w-3",
+                                          pConfig.fill,
+                                          pConfig.color
+                                        )}
+                                      />
+                                      <span>{pConfig.badgeLabel}</span>
+                                    </span>
+                                  )}
+
+                                  <CustomSelect
+                                    value={task.status}
+                                    onChange={(nextStatus) =>
+                                      updateTaskMutation.mutate({
+                                        id: task.id,
+                                        status: nextStatus,
+                                      })
+                                    }
+                                    options={STATUS_OPTIONS}
+                                    size="sm"
+                                    className="hidden sm:inline-block"
+                                  />
+                                </div>
+                              </div>
+
+                              {task.description && (
+                                <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2 leading-relaxed">
+                                  {task.description}
+                                </p>
+                              )}
+
+                              <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px]">
+                                {task.dueDate && (
+                                  <span className="inline-flex items-center gap-1 text-zinc-500 dark:text-zinc-400 font-medium">
+                                    <Calendar className="h-3 w-3 text-indigo-500" />
+                                    <span>{formatDueDate(task.dueDate)}</span>
+                                  </span>
+                                )}
+
+                                {totalSub > 0 && (
+                                  <span className="inline-flex items-center gap-1 rounded-md bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 text-zinc-600 dark:text-zinc-300 font-medium">
+                                    <ListChecks className="h-3 w-3 text-zinc-400" />
+                                    <span>
+                                      {completedSub}/{totalSub}
+                                    </span>
+                                  </span>
+                                )}
+
+                                {task.tags?.map((tag) => (
+                                  <span
+                                    key={tag.id || tag.name}
+                                    className="inline-flex items-center gap-0.5 text-indigo-600 dark:text-indigo-400 font-medium bg-indigo-50 dark:bg-indigo-950/40 rounded px-1.5 py-0.5 text-[10px]"
+                                  >
+                                    #{tag.name}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Actions on hover */}
+                            <div
+                              className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition shrink-0 ml-2"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {isTrashView ? (
+                                <button
+                                  type="button"
+                                  onClick={() => restoreTaskMutation.mutate(task.id)}
+                                  className="rounded-lg p-1 text-zinc-400 hover:text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition"
+                                  title="Відновити з корзини"
+                                >
+                                  <RotateCcw className="h-4 w-4" />
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    updateTaskMutation.mutate({
+                                      id: task.id,
+                                      isArchived: !task.isArchived,
+                                    })
+                                  }
+                                  className="rounded-lg p-1 text-zinc-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition"
+                                  title={task.isArchived ? "Розархівувати" : "В архів"}
+                                >
+                                  {task.isArchived ? (
+                                    <ArchiveRestore className="h-4 w-4" />
+                                  ) : (
+                                    <Archive className="h-4 w-4" />
+                                  )}
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => deleteTaskMutation.mutate(task.id)}
+                                className="rounded-lg p-1 text-zinc-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                                title={isTrashView ? "Очистити остаточно" : "В корзину"}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </AnimatePresence>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </main>
       </div>
 
@@ -877,7 +1047,7 @@ export default function DashboardPage() {
         onRestore={(id) => restoreTaskMutation.mutate(id)}
       />
 
-      {/* Full Modal for Manual Task Creation */}
+      {/* Full Modal for Task Creation */}
       <Modal
         isOpen={isCreateModalOpen}
         onClose={() => {
