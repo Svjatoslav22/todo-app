@@ -41,8 +41,14 @@ import KanbanView from "@/components/views/KanbanView";
 import CalendarView from "@/components/views/CalendarView";
 import TimelineView from "@/components/views/TimelineView";
 import Modal from "@/components/ui/Modal";
+import CommandPalette from "@/components/productivity/CommandPalette";
+import KeyboardShortcutsModal from "@/components/productivity/KeyboardShortcutsModal";
+import FocusModeModal from "@/components/productivity/FocusModeModal";
+import MyDayModal from "@/components/productivity/MyDayModal";
 import { useToast } from "@/providers/ToastProvider";
 import { parseNaturalLanguageTask } from "@/lib/taskParser";
+import { triggerConfetti } from "@/lib/celebrate";
+import { recordTaskCompletion } from "@/lib/productivity";
 import { cn } from "@/lib/utils";
 
 const STATUS_OPTIONS = [
@@ -123,6 +129,12 @@ export default function DashboardPage() {
   const [modalStatus, setModalStatus] = useState("todo");
   const [modalTags, setModalTags] = useState("");
 
+  // Productivity Modals State
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const [isPomodoroOpen, setIsPomodoroOpen] = useState(false);
+  const [isMyDayOpen, setIsMyDayOpen] = useState(false);
+
   // Live parsed natural language elements
   const parsedPreview = useMemo(() => {
     return parseNaturalLanguageTask(quickInput);
@@ -190,6 +202,10 @@ export default function DashboardPage() {
         setSelectedTask(res.data.task);
       }
       if (variables.status) {
+        if (variables.status === "done") {
+          triggerConfetti();
+          recordTaskCompletion();
+        }
         toast.info("Статус оновлено", {
           description: `Завдання переведено в «${STATUS_LABELS[variables.status]}».`,
         });
@@ -246,6 +262,13 @@ export default function DashboardPage() {
       const count = variables.taskIds.length;
       setSelectedTaskIds([]);
 
+      if (variables.action === "status" && variables.value === "done") {
+        triggerConfetti();
+        for (let i = 0; i < count; i++) {
+          recordTaskCompletion();
+        }
+      }
+
       toast.undoable(`Дію застосовано до ${count} завдань`, {
         description: "Ви можете скасувати останню масову зміну.",
         duration: 6000,
@@ -277,12 +300,48 @@ export default function DashboardPage() {
   // Global shortcuts
   useEffect(() => {
     function handleKeyDown(event) {
-      if (
-        event.key === "n" &&
-        !["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)
-      ) {
+      const activeTag = document.activeElement?.tagName;
+      const isInputActive =
+        ["INPUT", "TEXTAREA", "SELECT"].includes(activeTag) ||
+        document.activeElement?.isContentEditable;
+
+      // Ctrl+K or Cmd+K: Command Palette
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setIsCommandPaletteOpen((prev) => !prev);
+        return;
+      }
+
+      // If user is currently typing in an input/textarea, do not intercept single-key shortcuts
+      if (isInputActive) return;
+
+      if (event.key === "?") {
+        event.preventDefault();
+        setIsShortcutsOpen(true);
+      } else if (event.key.toLowerCase() === "p") {
+        event.preventDefault();
+        setIsPomodoroOpen(true);
+      } else if (event.key.toLowerCase() === "d") {
+        event.preventDefault();
+        setIsMyDayOpen(true);
+      } else if (event.key === "1") {
+        event.preventDefault();
+        handleViewModeChange("list");
+      } else if (event.key === "2") {
+        event.preventDefault();
+        handleViewModeChange("kanban");
+      } else if (event.key === "3") {
+        event.preventDefault();
+        handleViewModeChange("calendar");
+      } else if (event.key === "4") {
+        event.preventDefault();
+        handleViewModeChange("timeline");
+      } else if (event.key === "/") {
         event.preventDefault();
         inputRef.current?.focus();
+      } else if (event.key === "n" || event.key === "N") {
+        event.preventDefault();
+        setIsCreateModalOpen(true);
       }
     }
     window.addEventListener("keydown", handleKeyDown);
@@ -564,6 +623,8 @@ export default function DashboardPage() {
         user={meQuery.data}
         onLogout={handleLogout}
         onOpenCreateTask={() => setIsCreateModalOpen(true)}
+        onOpenMyDay={() => setIsMyDayOpen(true)}
+        onOpenPomodoro={() => setIsPomodoroOpen(true)}
       />
 
       {/* Main Content */}
@@ -576,6 +637,10 @@ export default function DashboardPage() {
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           onOpenCreateTask={() => setIsCreateModalOpen(true)}
+          onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
+          onOpenPomodoro={() => setIsPomodoroOpen(true)}
+          onOpenMyDay={() => setIsMyDayOpen(true)}
+          onOpenShortcuts={() => setIsShortcutsOpen(true)}
         />
 
         <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-8 py-6 space-y-5">
@@ -1158,6 +1223,48 @@ export default function DashboardPage() {
         }}
         onOpenCreateTask={() => setIsCreateModalOpen(true)}
         onOpenProfile={handleLogout}
+      />
+
+      {/* Epic 4: Command Palette */}
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        tasks={allTasks}
+        onSelectTask={setSelectedTask}
+        onOpenCreateTask={() => setIsCreateModalOpen(true)}
+        onOpenPomodoro={() => setIsPomodoroOpen(true)}
+        onOpenMyDay={() => setIsMyDayOpen(true)}
+        onOpenShortcuts={() => setIsShortcutsOpen(true)}
+        onSelectList={(listId) => {
+          setActiveList(listId);
+          setStatusFilter("all");
+          setSelectedTaskIds([]);
+        }}
+        onChangeView={handleViewModeChange}
+      />
+
+      {/* Epic 4: Keyboard Shortcuts Modal */}
+      <KeyboardShortcutsModal
+        isOpen={isShortcutsOpen}
+        onClose={() => setIsShortcutsOpen(false)}
+      />
+
+      {/* Epic 4: Pomodoro Focus Timer Modal */}
+      <FocusModeModal
+        isOpen={isPomodoroOpen}
+        onClose={() => setIsPomodoroOpen(false)}
+        tasks={allTasks}
+        onCompleteTask={(taskId) => {
+          updateTaskMutation.mutate({ id: taskId, status: "done" });
+        }}
+      />
+
+      {/* Epic 4: My Day & Motivation Modal */}
+      <MyDayModal
+        isOpen={isMyDayOpen}
+        onClose={() => setIsMyDayOpen(false)}
+        tasks={allTasks}
+        userName={meQuery.data?.name || meQuery.data?.email?.split("@")[0] || "Користувач"}
       />
     </div>
   );

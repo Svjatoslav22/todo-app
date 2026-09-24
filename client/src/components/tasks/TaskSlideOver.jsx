@@ -17,6 +17,7 @@ import CustomSelect from "@/components/ui/CustomSelect";
 import DatePicker from "@/components/ui/DatePicker";
 import PrioritySelect from "@/components/ui/PrioritySelect";
 import Badge from "@/components/ui/Badge";
+import { triggerConfetti } from "@/lib/celebrate";
 import { cn } from "@/lib/utils";
 
 const STATUS_OPTIONS = [
@@ -63,6 +64,11 @@ export default function TaskSlideOver({
     );
     setSubtasks(nextSubtasks);
     handleSaveField({ subtasks: nextSubtasks });
+
+    const allNowDone = nextSubtasks.every((s) => s.completed);
+    if (allNowDone && nextSubtasks.length > 0) {
+      triggerConfetti();
+    }
   }
 
   function handleAddSubtask(e) {

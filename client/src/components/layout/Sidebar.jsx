@@ -16,6 +16,8 @@ import {
   LogOut,
   Moon,
   Laptop,
+  Flame,
+  Timer,
 } from "lucide-react";
 import Avatar from "@/components/ui/Avatar";
 import Tooltip from "@/components/ui/Tooltip";
@@ -44,6 +46,8 @@ export default function Sidebar({
   user,
   onLogout,
   onOpenCreateTask,
+  onOpenMyDay,
+  onOpenPomodoro,
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const { theme, resolvedTheme, setTheme, toggleTheme } = useTheme();
@@ -184,6 +188,69 @@ export default function Sidebar({
               <div key={item.id}>{buttonContent}</div>
             );
           })}
+        </div>
+
+        {/* Productivity Hub */}
+        <div className="space-y-1">
+          {!collapsed && (
+            <p className="px-3 text-[11px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+              Продуктивність
+            </p>
+          )}
+
+          {/* My Day */}
+          {collapsed ? (
+            <Tooltip content="Мій день (D)" position="right">
+              <button
+                type="button"
+                onClick={onOpenMyDay}
+                className="flex w-full items-center justify-center rounded-xl p-2 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 transition"
+              >
+                <Flame className="h-4 w-4 fill-amber-500 text-amber-500" />
+              </button>
+            </Tooltip>
+          ) : (
+            <button
+              type="button"
+              onClick={onOpenMyDay}
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:bg-amber-50/60 dark:hover:bg-amber-950/30 hover:text-amber-700 dark:hover:text-amber-300 transition group"
+            >
+              <div className="flex items-center gap-2.5 truncate">
+                <Flame className="h-4 w-4 shrink-0 text-amber-500 fill-amber-500/20 group-hover:fill-amber-500 transition-colors" />
+                <span>Мій день</span>
+              </div>
+              <kbd className="rounded bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 text-[10px] font-mono text-zinc-400">
+                D
+              </kbd>
+            </button>
+          )}
+
+          {/* Pomodoro */}
+          {collapsed ? (
+            <Tooltip content="Помодоро / Фокус (P)" position="right">
+              <button
+                type="button"
+                onClick={onOpenPomodoro}
+                className="flex w-full items-center justify-center rounded-xl p-2 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition"
+              >
+                <Timer className="h-4 w-4" />
+              </button>
+            </Tooltip>
+          ) : (
+            <button
+              type="button"
+              onClick={onOpenPomodoro}
+              className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:bg-indigo-50/60 dark:hover:bg-indigo-950/30 hover:text-indigo-700 dark:hover:text-indigo-300 transition group"
+            >
+              <div className="flex items-center gap-2.5 truncate">
+                <Timer className="h-4 w-4 shrink-0 text-indigo-500 group-hover:scale-110 transition-transform" />
+                <span>Фокус (Помодоро)</span>
+              </div>
+              <kbd className="rounded bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 text-[10px] font-mono text-zinc-400">
+                P
+              </kbd>
+            </button>
+          )}
         </div>
 
         {/* Projects / Lists */}
