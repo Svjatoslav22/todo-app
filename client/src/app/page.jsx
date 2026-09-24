@@ -1241,6 +1241,8 @@ export default function DashboardPage() {
           setSelectedTaskIds([]);
         }}
         onChangeView={handleViewModeChange}
+        isAdmin={meQuery.data?.role === "admin"}
+        onOpenAdmin={() => router.push("/admin")}
       />
 
       {/* Epic 4: Keyboard Shortcuts Modal */}

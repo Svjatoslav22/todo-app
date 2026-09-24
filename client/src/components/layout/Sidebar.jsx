@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Inbox,
@@ -18,6 +19,7 @@ import {
   Laptop,
   Flame,
   Timer,
+  ShieldCheck,
 } from "lucide-react";
 import Avatar from "@/components/ui/Avatar";
 import Tooltip from "@/components/ui/Tooltip";
@@ -298,6 +300,40 @@ export default function Sidebar({
             );
           })}
         </div>
+
+        {/* Admin Link for Admins */}
+        {user?.role === "admin" && (
+          <div className="space-y-1">
+            {!collapsed && (
+              <p className="px-3 text-[11px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400">
+                Адміністрування
+              </p>
+            )}
+            {collapsed ? (
+              <Tooltip content="Адмін-панель" position="right">
+                <Link
+                  href="/admin"
+                  className="flex w-full items-center justify-center rounded-xl p-2 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/40 transition"
+                >
+                  <ShieldCheck className="h-4 w-4" />
+                </Link>
+              </Tooltip>
+            ) : (
+              <Link
+                href="/admin"
+                className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-xs font-semibold text-purple-700 dark:text-purple-300 bg-purple-50/60 dark:bg-purple-950/40 border border-purple-200/60 dark:border-purple-800/40 hover:bg-purple-100/70 dark:hover:bg-purple-900/50 transition group"
+              >
+                <div className="flex items-center gap-2.5 truncate">
+                  <ShieldCheck className="h-4 w-4 shrink-0 text-purple-600 dark:text-purple-400" />
+                  <span>Адмін-панель</span>
+                </div>
+                <span className="rounded bg-purple-200/70 dark:bg-purple-900/80 px-1.5 py-0.5 text-[9px] font-bold uppercase text-purple-800 dark:text-purple-200">
+                  PRO
+                </span>
+              </Link>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Bottom Profile & Settings Bar */}

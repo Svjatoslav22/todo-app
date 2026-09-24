@@ -22,6 +22,7 @@ import {
   Circle,
   ArrowRight,
   Command,
+  ShieldCheck,
 } from "lucide-react";
 import { useTheme } from "@/providers/ThemeProvider";
 import { cn } from "@/lib/utils";
@@ -36,6 +37,8 @@ function CommandPaletteModal({
   onOpenShortcuts,
   onSelectList,
   onChangeView,
+  isAdmin = false,
+  onOpenAdmin,
 }) {
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -86,6 +89,22 @@ function CommandPaletteModal({
         onOpenMyDay();
       },
     },
+    ...(isAdmin && onOpenAdmin
+      ? [
+          {
+            id: "admin_panel",
+            title: "Адмін-панель Todo Pro",
+            subtitle: "Керування користувачами, аналітика та системні логи",
+            category: "Дії",
+            icon: ShieldCheck,
+            shortcut: "A",
+            action: () => {
+              onClose();
+              onOpenAdmin();
+            },
+          },
+        ]
+      : []),
     {
       id: "shortcuts",
       title: "Гарячі клавіші",
