@@ -281,6 +281,33 @@ const toggleSubtask = asyncHandler(async (req, res) => {
   return res.json({ subtask: updatedSubtask });
 });
 
+const reorderTasks = asyncHandler(async (req, res) => {
+  const { items } = req.body;
+  const ids = items.map((i) => i.id);
+
+  const count = await prisma.task.count({
+    where: { id: { in: ids }, userId: req.user.id },
+  });
+
+  if (count !== ids.length) {
+    throw new BadRequestError("Деякі завдання не належать поточному користувачу");
+  }
+
+  await prisma.$transaction(
+    items.map((item) =>
+      prisma.task.update({
+        where: { id: item.id },
+        data: {
+          order: item.order,
+          ...(item.status ? { status: item.status } : {}),
+        },
+      })
+    )
+  );
+
+  return res.json({ message: "Порядок завдань успішно збережено" });
+});
+
 module.exports = {
   listTasks,
   getTask,
@@ -290,4 +317,5 @@ module.exports = {
   restoreTask,
   batchAction,
   toggleSubtask,
+  reorderTasks,
 };

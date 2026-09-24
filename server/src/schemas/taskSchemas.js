@@ -111,6 +111,18 @@ const batchActionSchema = z.object({
   value: z.any().optional(),
 });
 
+const reorderTasksSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        id: z.coerce.number().int().positive(),
+        order: z.number().int(),
+        status: z.enum(TASK_STATUSES).optional(),
+      })
+    )
+    .min(1, "Потрібно передати щонайменше один елемент для сортування"),
+});
+
 module.exports = {
   TASK_STATUSES,
   TASK_PRIORITIES,
@@ -120,4 +132,5 @@ module.exports = {
   subtaskParamSchema,
   listTasksQuerySchema,
   batchActionSchema,
+  reorderTasksSchema,
 };

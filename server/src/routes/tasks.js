@@ -9,6 +9,7 @@ const {
   subtaskParamSchema,
   listTasksQuerySchema,
   batchActionSchema,
+  reorderTasksSchema,
 } = require("../schemas/taskSchemas");
 
 const router = express.Router();
@@ -31,6 +32,12 @@ router.post(
   "/batch",
   validate({ body: batchActionSchema }),
   taskController.batchAction
+);
+
+router.post(
+  "/reorder",
+  validate({ body: reorderTasksSchema }),
+  taskController.reorderTasks
 );
 
 router.get(
