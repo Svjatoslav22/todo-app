@@ -10,6 +10,7 @@ const env = require("./lib/env");
 const prisma = require("./lib/prisma");
 const authRouter = require("./routes/auth");
 const tasksRouter = require("./routes/tasks");
+const adminRouter = require("./routes/admin");
 const errorHandler = require("./middleware/errorHandler");
 const notFoundHandler = require("./middleware/notFoundHandler");
 
@@ -67,6 +68,7 @@ app.get("/health", (_req, res) => {
 // API Routes
 app.use("/api/auth", authRouter);
 app.use("/api/tasks", tasksRouter);
+app.use("/api/admin", adminRouter);
 
 // 404 & Centralized Error Handling
 app.use(notFoundHandler);
