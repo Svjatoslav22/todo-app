@@ -1,20 +1,20 @@
-const { z } = require("zod");
+import { z } from "zod";
 
-const TASK_STATUSES = ["todo", "in_progress", "done"];
-const TASK_PRIORITIES = ["urgent", "high", "medium", "low", "none"];
+export const TASK_STATUSES = ["todo", "in_progress", "done"] as const;
+export const TASK_PRIORITIES = ["urgent", "high", "medium", "low", "none"] as const;
 
-const subtaskInputSchema = z.object({
+export const subtaskInputSchema = z.object({
   id: z.number().optional(),
   title: z.string().trim().min(1, "Назва підзадачі не може бути порожньою"),
   completed: z.boolean().default(false),
 });
 
-const tagInputSchema = z.object({
+export const tagInputSchema = z.object({
   name: z.string().trim().min(1, "Назва тегу не може бути порожньою").max(30),
   color: z.string().default("indigo"),
 });
 
-const createTaskSchema = z.object({
+export const createTaskSchema = z.object({
   title: z
     .string({ required_error: "Назва завдання є обов'язковою" })
     .trim()
@@ -41,7 +41,7 @@ const createTaskSchema = z.object({
   subtasks: z.array(subtaskInputSchema).optional(),
 });
 
-const updateTaskSchema = z.object({
+export const updateTaskSchema = z.object({
   title: z
     .string()
     .trim()
@@ -70,19 +70,19 @@ const updateTaskSchema = z.object({
   subtasks: z.array(subtaskInputSchema).optional(),
 });
 
-const taskIdParamSchema = z.object({
+export const taskIdParamSchema = z.object({
   id: z.coerce
     .number({ invalid_type_error: "ID завдання повинен бути числом" })
     .int("ID завдання повинен бути цілим числом")
     .positive("ID завдання повинен бути більшим за 0"),
 });
 
-const subtaskParamSchema = z.object({
+export const subtaskParamSchema = z.object({
   id: z.coerce.number().int().positive(),
   subtaskId: z.coerce.number().int().positive(),
 });
 
-const listTasksQuerySchema = z.object({
+export const listTasksQuerySchema = z.object({
   status: z.enum(TASK_STATUSES).optional(),
   priority: z.enum(TASK_PRIORITIES).optional(),
   projectId: z.coerce.number().positive().optional(),
@@ -103,7 +103,7 @@ const listTasksQuerySchema = z.object({
   tag: z.string().trim().optional(),
 });
 
-const batchActionSchema = z.object({
+export const batchActionSchema = z.object({
   taskIds: z
     .array(z.number().int().positive())
     .min(1, "Необхідно вказати щонайменше одне завдання"),
@@ -111,7 +111,7 @@ const batchActionSchema = z.object({
   value: z.any().optional(),
 });
 
-const reorderTasksSchema = z.object({
+export const reorderTasksSchema = z.object({
   items: z
     .array(
       z.object({
@@ -123,14 +123,7 @@ const reorderTasksSchema = z.object({
     .min(1, "Потрібно передати щонайменше один елемент для сортування"),
 });
 
-module.exports = {
-  TASK_STATUSES,
-  TASK_PRIORITIES,
-  createTaskSchema,
-  updateTaskSchema,
-  taskIdParamSchema,
-  subtaskParamSchema,
-  listTasksQuerySchema,
-  batchActionSchema,
-  reorderTasksSchema,
-};
+export type CreateTaskSchemaType = z.infer<typeof createTaskSchema>;
+export type UpdateTaskSchemaType = z.infer<typeof updateTaskSchema>;
+export type BatchActionSchemaType = z.infer<typeof batchActionSchema>;
+export type ReorderTasksSchemaType = z.infer<typeof reorderTasksSchema>;

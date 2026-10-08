@@ -1,15 +1,34 @@
-const { GoogleGenAI } = require("@google/genai");
-const env = require("../lib/env");
+import { GoogleGenAI } from "@google/genai";
+import env from "../lib/env";
+
+export interface AISubtask {
+  title: string;
+}
+
+export interface AIEstimate {
+  minutes: number;
+  formatted: string;
+  reasoning: string;
+}
+
+export interface AIAnalysisResult {
+  subtasks: AISubtask[];
+  estimate: AIEstimate;
+  priority: "urgent" | "high" | "medium" | "low";
+  priorityReason: string;
+  tags: string[];
+  source: "gemini" | "heuristic";
+}
 
 /**
  * Intelligent heuristics fallback when Gemini API key is absent or unreachable.
  * Never fails, always returns high-quality structured Ukrainian suggestions.
  */
-function generateHeuristicAnalysis(title, description = "") {
+export function generateHeuristicAnalysis(title: string, description = ""): AIAnalysisResult {
   const text = `${title} ${description}`.toLowerCase();
 
   // 1. Subtasks heuristic
-  let subtasks = [];
+  let subtasks: AISubtask[] = [];
   if (text.includes("звіт") || text.includes("аналіз")) {
     subtasks = [
       { title: "Зібрати вхідні дані та метрики" },
@@ -24,20 +43,36 @@ function generateHeuristicAnalysis(title, description = "") {
       { title: "Підібрати візуальні матеріали та графіку" },
       { title: "Провести тренувальну репетицію таймінгу" },
     ];
-  } else if (text.includes("проєкт") || text.includes("розроб") || text.includes("код") || text.includes("api") || text.includes("фіча")) {
+  } else if (
+    text.includes("проєкт") ||
+    text.includes("розроб") ||
+    text.includes("код") ||
+    text.includes("api") ||
+    text.includes("фіча")
+  ) {
     subtasks = [
       { title: "Описати технічні вимоги та архітектуру" },
       { title: "Реалізувати базову функціональність" },
       { title: "Покрити тестами та перевірити крайові випадки" },
       { title: "Оформити pull request та провести код-рев'ю" },
     ];
-  } else if (text.includes("купити") || text.includes("магазин") || text.includes("замовити") || text.includes("продукт")) {
+  } else if (
+    text.includes("купити") ||
+    text.includes("магазин") ||
+    text.includes("замовити") ||
+    text.includes("продукт")
+  ) {
     subtasks = [
       { title: "Скласти точний список покупок" },
       { title: "Перевірити наявність та ціни" },
       { title: "Оформити замовлення або відвідати магазин" },
     ];
-  } else if (text.includes("зустріч") || text.includes("дзвінок") || text.includes("call") || text.includes("обговорення")) {
+  } else if (
+    text.includes("зустріч") ||
+    text.includes("дзвінок") ||
+    text.includes("call") ||
+    text.includes("обговорення")
+  ) {
     subtasks = [
       { title: "Підготувати порядок денний (agenda)" },
       { title: "Провести зустріч та зафіксувати домовленості" },
@@ -52,7 +87,7 @@ function generateHeuristicAnalysis(title, description = "") {
   }
 
   // 2. Priority heuristic
-  let priority = "medium";
+  let priority: "urgent" | "high" | "medium" | "low" = "medium";
   let priorityReason = "Стандартний пріоритет для запланованої задачі";
 
   if (
@@ -90,22 +125,36 @@ function generateHeuristicAnalysis(title, description = "") {
   let formatted = "45 хв";
   let reasoning = "Середня тривалість для стандартної задачі";
 
-  if (text.includes("швидко") || text.includes("дзвінок") || text.includes("повідомлення") || text.includes("перевірити пошту")) {
+  if (
+    text.includes("швидко") ||
+    text.includes("дзвінок") ||
+    text.includes("повідомлення") ||
+    text.includes("перевірити пошту")
+  ) {
     minutes = 20;
     formatted = "20 хв";
     reasoning = "Коротке завдання з мінімальними зусиллями";
-  } else if (text.includes("звіт") || text.includes("презентац") || text.includes("дизайн") || text.includes("стаття")) {
+  } else if (
+    text.includes("звіт") ||
+    text.includes("презентац") ||
+    text.includes("дизайн") ||
+    text.includes("стаття")
+  ) {
     minutes = 120;
     formatted = "2 год";
     reasoning = "Потребує концентрації, збору матеріалів та оформлення";
-  } else if (text.includes("проєкт") || text.includes("рефакторинг") || text.includes("міграція")) {
+  } else if (
+    text.includes("проєкт") ||
+    text.includes("рефакторинг") ||
+    text.includes("міграція")
+  ) {
     minutes = 240;
     formatted = "4 год";
     reasoning = "Комплексне завдання, що містить кілька фаз реалізації";
   }
 
   // 4. Tags heuristic
-  const tagsSet = new Set();
+  const tagsSet = new Set<string>();
   if (text.includes("робот") || text.includes("проєкт") || text.includes("клієнт")) tagsSet.add("робота");
   if (text.includes("код") || text.includes("api") || text.includes("баг") || text.includes("розроб")) tagsSet.add("dev");
   if (text.includes("звіт") || text.includes("фінанс") || text.includes("рахунок")) tagsSet.add("фінанси");
@@ -131,12 +180,17 @@ function generateHeuristicAnalysis(title, description = "") {
  * Main AI Assistant function.
  * Uses Google Gemini API if GEMINI_API_KEY is available; seamlessly falls back to heuristics.
  */
-async function analyzeTaskWithAI({ title, description = "" }) {
+export async function analyzeTaskWithAI({
+  title,
+  description = "",
+}: {
+  title: string;
+  description?: string;
+}): Promise<AIAnalysisResult> {
   if (!title || !title.trim()) {
     throw new Error("Назва завдання обов'язкова для аналізу");
   }
 
-  // If no Gemini API key configured, use intelligent heuristics immediately
   if (!env.GEMINI_API_KEY) {
     return generateHeuristicAnalysis(title, description);
   }
@@ -183,7 +237,6 @@ async function analyzeTaskWithAI({ title, description = "" }) {
     });
 
     const rawText = response.text || "";
-    // Clean potential markdown blocks
     const cleanedJson = rawText
       .replace(/```json/g, "")
       .replace(/```/g, "")
@@ -193,7 +246,7 @@ async function analyzeTaskWithAI({ title, description = "" }) {
 
     return {
       subtasks: Array.isArray(parsed.subtasks)
-        ? parsed.subtasks.map((s) => ({ title: String(s.title || s) }))
+        ? parsed.subtasks.map((s: any) => ({ title: String(s.title || s) }))
         : [],
       estimate: parsed.estimate || {
         minutes: 45,
@@ -207,13 +260,8 @@ async function analyzeTaskWithAI({ title, description = "" }) {
       tags: Array.isArray(parsed.tags) ? parsed.tags.map(String) : ["ai"],
       source: "gemini",
     };
-  } catch (err) {
+  } catch (err: any) {
     console.warn("Gemini API call failed or timed out. Using intelligent heuristic fallback:", err.message);
     return generateHeuristicAnalysis(title, description);
   }
 }
-
-module.exports = {
-  analyzeTaskWithAI,
-  generateHeuristicAnalysis,
-};

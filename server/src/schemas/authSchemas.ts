@@ -1,6 +1,6 @@
-const { z } = require("zod");
+import { z } from "zod";
 
-const registerSchema = z.object({
+export const registerSchema = z.object({
   email: z
     .string({ required_error: "Email є обов'язковим" })
     .trim()
@@ -12,7 +12,7 @@ const registerSchema = z.object({
     .max(100, "Пароль не може бути довшим за 100 символів"),
 });
 
-const loginSchema = z.object({
+export const loginSchema = z.object({
   email: z
     .string({ required_error: "Email є обов'язковим" })
     .trim()
@@ -23,7 +23,5 @@ const loginSchema = z.object({
     .min(1, "Пароль є обов'язковим"),
 });
 
-module.exports = {
-  registerSchema,
-  loginSchema,
-};
+export type RegisterInput = z.infer<typeof registerSchema>;
+export type LoginInput = z.infer<typeof loginSchema>;
