@@ -1,8 +1,14 @@
-const { verifyAccessToken } = require("../utils/jwt");
-const { UnauthorizedError, ForbiddenError } = require("../utils/errors");
-const prisma = require("../lib/prisma");
+import { Response, NextFunction } from "express";
+import { verifyAccessToken } from "../utils/jwt";
+import { UnauthorizedError, ForbiddenError } from "../utils/errors";
+import prisma from "../lib/prisma";
+import { AuthRequest } from "../types";
 
-async function authMiddleware(req, res, next) {
+export async function authMiddleware(
+  req: AuthRequest,
+  _res: Response,
+  next: NextFunction
+): Promise<void> {
   const header = req.headers.authorization;
 
   if (!header || !header.startsWith("Bearer ")) {
@@ -37,7 +43,7 @@ async function authMiddleware(req, res, next) {
 
     req.user = user;
     return next();
-  } catch (err) {
+  } catch (err: any) {
     if (err.name === "TokenExpiredError") {
       return next(new UnauthorizedError("Термін дії токена закінчився"));
     }
@@ -45,4 +51,4 @@ async function authMiddleware(req, res, next) {
   }
 }
 
-module.exports = authMiddleware;
+export default authMiddleware;

@@ -1,17 +1,24 @@
-const { ZodError } = require("zod");
-const { AppError } = require("../utils/errors");
+import { Request, Response, NextFunction } from "express";
+import { ZodError } from "zod";
+import { AppError } from "../utils/errors";
 
-function errorHandler(err, req, res, _next) {
-  let statusCode = err.statusCode || 500;
-  let message = err.message || "Внутрішня помилка сервера";
-  let details = err.details || null;
+export function errorHandler(
+  err: any,
+  _req: Request,
+  res: Response,
+  _next: NextFunction
+): Response {
+  let statusCode: number = err.statusCode || 500;
+  let message: string = err.message || "Внутрішня помилка сервера";
+  let details: any = err.details || null;
 
   // Handle Zod validation errors
   if (err instanceof ZodError) {
     statusCode = 400;
     message = "Помилка валідації вхідних даних";
-    details = err.errors.map((issue) => ({
-      path: issue.path.join("."),
+    const issues = (err as any).issues || (err as any).errors || [];
+    details = issues.map((issue: any) => ({
+      path: issue.path?.join(".") ?? "",
       message: issue.message,
     }));
   }
@@ -41,7 +48,7 @@ function errorHandler(err, req, res, _next) {
   }
 
   // Log unexpected errors
-  if (!err.isOperational && statusCode === 500) {
+  if (!(err instanceof AppError) && statusCode === 500) {
     console.error("🔥 Unexpected Error:", err);
   }
 
@@ -55,4 +62,4 @@ function errorHandler(err, req, res, _next) {
   });
 }
 
-module.exports = errorHandler;
+export default errorHandler;

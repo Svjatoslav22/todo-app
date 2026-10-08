@@ -1,6 +1,8 @@
-const { ForbiddenError, UnauthorizedError } = require("../utils/errors");
+import { Response, NextFunction } from "express";
+import { ForbiddenError, UnauthorizedError } from "../utils/errors";
+import { AuthRequest } from "../types";
 
-function adminMiddleware(req, res, next) {
+export function adminMiddleware(req: AuthRequest, _res: Response, next: NextFunction): void {
   if (!req.user) {
     return next(new UnauthorizedError("Авторизація обов'язкова"));
   }
@@ -14,4 +16,4 @@ function adminMiddleware(req, res, next) {
   return next();
 }
 
-module.exports = adminMiddleware;
+export default adminMiddleware;
