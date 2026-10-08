@@ -1,4 +1,4 @@
-const { z } = require("zod");
+import { z } from "zod";
 
 const envSchema = z.object({
   PORT: z.coerce.number().default(4000),
@@ -18,4 +18,6 @@ if (!parsed.success) {
   process.exit(1);
 }
 
-module.exports = parsed.data;
+export type EnvConfig = z.infer<typeof envSchema>;
+export const env = parsed.data;
+export default env;
