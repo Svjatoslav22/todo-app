@@ -1,0 +1,17 @@
+{
+  "name": "todo-app-root",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Todo Pro - Production-grade Task Management Application (Linear + Notion + Todoist)",
+  "scripts": {
+    "dev": "concurrently -n \"SERVER,CLIENT\" -c \"magenta,cyan\" \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
+    "build": "npm run build --prefix client",
+    "lint": "npm run lint --prefix client",
+    "install:all": "npm install && npm install --prefix client && npm install --prefix server",
+    "db:push": "npx --prefix server prisma db push",
+    "db:generate": "npx --prefix server prisma generate"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
