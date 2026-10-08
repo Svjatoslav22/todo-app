@@ -1,8 +1,8 @@
-const express = require("express");
-const taskController = require("../controllers/taskController");
-const authMiddleware = require("../middleware/authMiddleware");
-const validate = require("../middleware/validate");
-const {
+import { Router } from "express";
+import taskController from "../controllers/taskController";
+import authMiddleware from "../middleware/authMiddleware";
+import validate from "../middleware/validate";
+import {
   createTaskSchema,
   updateTaskSchema,
   taskIdParamSchema,
@@ -10,9 +10,9 @@ const {
   listTasksQuerySchema,
   batchActionSchema,
   reorderTasksSchema,
-} = require("../schemas/taskSchemas");
+} from "../schemas/taskSchemas";
 
-const router = express.Router();
+const router = Router();
 
 router.use(authMiddleware);
 
@@ -78,4 +78,4 @@ router.post(
   taskController.toggleSubtask
 );
 
-module.exports = router;
+export default router;

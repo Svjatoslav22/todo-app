@@ -16,7 +16,7 @@ export const tagInputSchema = z.object({
 
 export const createTaskSchema = z.object({
   title: z
-    .string({ required_error: "Назва завдання є обов'язковою" })
+    .string({ error: "Назва завдання є обов'язковою" })
     .trim()
     .min(1, "Назва завдання не може бути порожньою")
     .max(255, "Назва завдання не може перевищувати 255 символів"),
@@ -72,7 +72,7 @@ export const updateTaskSchema = z.object({
 
 export const taskIdParamSchema = z.object({
   id: z.coerce
-    .number({ invalid_type_error: "ID завдання повинен бути числом" })
+    .number({ error: "ID завдання повинен бути числом" })
     .int("ID завдання повинен бути цілим числом")
     .positive("ID завдання повинен бути більшим за 0"),
 });

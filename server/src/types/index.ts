@@ -2,8 +2,8 @@ import { Request } from "express";
 
 export interface UserTokenPayload {
   id: number;
-  email: string;
-  role: string;
+  email?: string;
+  role?: string;
 }
 
 export interface AuthRequest extends Request {

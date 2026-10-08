@@ -1,9 +1,11 @@
-const prisma = require("../lib/prisma");
-const { NotFoundError, BadRequestError } = require("../utils/errors");
-const asyncHandler = require("../utils/asyncHandler");
-const { analyzeTaskWithAI } = require("../services/aiService");
+import { Response } from "express";
+import prisma from "../lib/prisma";
+import { NotFoundError, BadRequestError, UnauthorizedError } from "../utils/errors";
+import asyncHandler from "../utils/asyncHandler";
+import { analyzeTaskWithAI } from "../services/aiService";
+import { AuthRequest } from "../types";
 
-async function getOwnedTaskOrThrow(id, userId) {
+async function getOwnedTaskOrThrow(id: number, userId: number) {
   const task = await prisma.task.findFirst({
     where: { id, userId },
     include: {
@@ -20,10 +22,14 @@ async function getOwnedTaskOrThrow(id, userId) {
   return task;
 }
 
-const listTasks = asyncHandler(async (req, res) => {
-  const { status, priority, projectId, isArchived, isDeleted, search, tag } = req.query;
+export const listTasks = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    throw new UnauthorizedError("Не авторизовано");
+  }
+
+  const { status, priority, projectId, isArchived, isDeleted, search, tag } = req.query as Record<string, any>;
   const isDeletedBool = isDeleted === "true" || isDeleted === true;
-  const where = {
+  const where: any = {
     userId: req.user.id,
     isDeleted: isDeletedBool,
   };
@@ -41,7 +47,7 @@ const listTasks = asyncHandler(async (req, res) => {
   }
 
   if (projectId) {
-    where.projectId = projectId;
+    where.projectId = parseInt(projectId, 10);
   }
 
   if (tag) {
@@ -70,27 +76,22 @@ const listTasks = asyncHandler(async (req, res) => {
   return res.json({ tasks });
 });
 
-const getTask = asyncHandler(async (req, res) => {
-  const id = req.params.id;
+export const getTask = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    throw new UnauthorizedError("Не авторизовано");
+  }
+
+  const id = parseInt(req.params.id as string, 10);
   const task = await getOwnedTaskOrThrow(id, req.user.id);
   return res.json({ task });
 });
 
-const createTask = asyncHandler(async (req, res) => {
-  const { title, description, status, priority, dueDate, projectId, tags, subtasks } = req.body;
-
-  // Process tags if provided
-  let tagConnectOrCreate = undefined;
-  if (Array.isArray(tags) && tags.length > 0) {
-    tagConnectOrCreate = tags.map((t) => {
-      const tagName = typeof t === "string" ? t.trim() : t.name.trim();
-      const tagColor = typeof t === "object" && t.color ? t.color : "indigo";
-      return {
-        where: { id: -1 }, // fallback for upsert
-        create: { name: tagName, color: tagColor, userId: req.user.id },
-      };
-    });
+export const createTask = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    throw new UnauthorizedError("Не авторизовано");
   }
+
+  const { title, description, status, priority, dueDate, projectId, tags, subtasks } = req.body;
 
   const task = await prisma.task.create({
     data: {
@@ -104,7 +105,7 @@ const createTask = asyncHandler(async (req, res) => {
       subtasks:
         Array.isArray(subtasks) && subtasks.length > 0
           ? {
-              create: subtasks.map((st) => ({
+              create: subtasks.map((st: any) => ({
                 title: st.title.trim(),
                 completed: Boolean(st.completed),
               })),
@@ -121,14 +122,18 @@ const createTask = asyncHandler(async (req, res) => {
   return res.status(201).json({ task });
 });
 
-const updateTask = asyncHandler(async (req, res) => {
-  const id = req.params.id;
+export const updateTask = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    throw new UnauthorizedError("Не авторизовано");
+  }
+
+  const id = parseInt(req.params.id as string, 10);
   await getOwnedTaskOrThrow(id, req.user.id);
 
   const { title, description, status, priority, dueDate, isArchived, isDeleted, order, projectId, subtasks } =
     req.body;
 
-  const updateData = {};
+  const updateData: any = {};
   if (title !== undefined) updateData.title = title;
   if (description !== undefined) updateData.description = description;
   if (status !== undefined) updateData.status = status;
@@ -148,7 +153,7 @@ const updateTask = asyncHandler(async (req, res) => {
     await prisma.subtask.deleteMany({ where: { taskId: id } });
     if (subtasks.length > 0) {
       updateData.subtasks = {
-        create: subtasks.map((st) => ({
+        create: subtasks.map((st: any) => ({
           title: st.title.trim(),
           completed: Boolean(st.completed),
         })),
@@ -169,8 +174,12 @@ const updateTask = asyncHandler(async (req, res) => {
   return res.json({ task: updated });
 });
 
-const deleteTask = asyncHandler(async (req, res) => {
-  const id = req.params.id;
+export const deleteTask = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    throw new UnauthorizedError("Не авторизовано");
+  }
+
+  const id = parseInt(req.params.id as string, 10);
   const existing = await getOwnedTaskOrThrow(id, req.user.id);
 
   if (existing.isDeleted) {
@@ -188,8 +197,12 @@ const deleteTask = asyncHandler(async (req, res) => {
   return res.json({ message: "Завдання переміщено в корзину" });
 });
 
-const restoreTask = asyncHandler(async (req, res) => {
-  const id = req.params.id;
+export const restoreTask = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    throw new UnauthorizedError("Не авторизовано");
+  }
+
+  const id = parseInt(req.params.id as string, 10);
   await getOwnedTaskOrThrow(id, req.user.id);
 
   const restored = await prisma.task.update({
@@ -205,7 +218,11 @@ const restoreTask = asyncHandler(async (req, res) => {
   return res.json({ task: restored, message: "Завдання відновлено" });
 });
 
-const batchAction = asyncHandler(async (req, res) => {
+export const batchAction = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    throw new UnauthorizedError("Не авторизовано");
+  }
+
   const { taskIds, action, value } = req.body;
 
   // Verify all tasks belong to user
@@ -261,9 +278,13 @@ const batchAction = asyncHandler(async (req, res) => {
   });
 });
 
-const toggleSubtask = asyncHandler(async (req, res) => {
-  const taskId = req.params.id;
-  const subtaskId = Number.parseInt(req.params.subtaskId, 10);
+export const toggleSubtask = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    throw new UnauthorizedError("Не авторизовано");
+  }
+
+  const taskId = parseInt(req.params.id as string, 10);
+  const subtaskId = Number.parseInt(req.params.subtaskId as string, 10);
 
   await getOwnedTaskOrThrow(taskId, req.user.id);
 
@@ -283,9 +304,13 @@ const toggleSubtask = asyncHandler(async (req, res) => {
   return res.json({ subtask: updatedSubtask });
 });
 
-const reorderTasks = asyncHandler(async (req, res) => {
+export const reorderTasks = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    throw new UnauthorizedError("Не авторизовано");
+  }
+
   const { items } = req.body;
-  const ids = items.map((i) => i.id);
+  const ids = items.map((i: any) => i.id);
 
   const count = await prisma.task.count({
     where: { id: { in: ids }, userId: req.user.id },
@@ -296,7 +321,7 @@ const reorderTasks = asyncHandler(async (req, res) => {
   }
 
   await prisma.$transaction(
-    items.map((item) =>
+    items.map((item: any) =>
       prisma.task.update({
         where: { id: item.id },
         data: {
@@ -310,7 +335,7 @@ const reorderTasks = asyncHandler(async (req, res) => {
   return res.json({ message: "Порядок завдань успішно збережено" });
 });
 
-const aiSuggest = asyncHandler(async (req, res) => {
+export const aiSuggest = asyncHandler(async (req: AuthRequest, res: Response) => {
   const { title, description } = req.body;
   if (!title || !title.trim()) {
     throw new BadRequestError("Поле title обов'язкове для AI аналізу");
@@ -320,20 +345,24 @@ const aiSuggest = asyncHandler(async (req, res) => {
   return res.json({ analysis });
 });
 
-const aiAssistTask = asyncHandler(async (req, res) => {
-  const id = req.params.id;
+export const aiAssistTask = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    throw new UnauthorizedError("Не авторизовано");
+  }
+
+  const id = parseInt(req.params.id as string, 10);
   const { apply = false } = req.body;
   const task = await getOwnedTaskOrThrow(id, req.user.id);
 
   const analysis = await analyzeTaskWithAI({
     title: task.title,
-    description: task.description,
+    description: task.description || undefined,
   });
 
   if (apply) {
     if (analysis.subtasks && analysis.subtasks.length > 0) {
       await prisma.subtask.createMany({
-        data: analysis.subtasks.map((st) => ({
+        data: analysis.subtasks.map((st: any) => ({
           title: st.title,
           taskId: task.id,
           completed: false,
@@ -341,7 +370,7 @@ const aiAssistTask = asyncHandler(async (req, res) => {
       });
     }
 
-    const updateData = {};
+    const updateData: any = {};
     if (task.priority === "none" && analysis.priority) {
       updateData.priority = analysis.priority;
     }
@@ -372,7 +401,7 @@ const aiAssistTask = asyncHandler(async (req, res) => {
   return res.json({ analysis, task });
 });
 
-module.exports = {
+export default {
   listTasks,
   getTask,
   createTask,

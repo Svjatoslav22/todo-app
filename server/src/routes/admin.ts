@@ -1,7 +1,7 @@
-const express = require("express");
-const authMiddleware = require("../middleware/authMiddleware");
-const adminMiddleware = require("../middleware/adminMiddleware");
-const {
+import { Router } from "express";
+import authMiddleware from "../middleware/authMiddleware";
+import adminMiddleware from "../middleware/adminMiddleware";
+import {
   getSystemStats,
   listUsers,
   updateUserRole,
@@ -9,9 +9,9 @@ const {
   getUserTasks,
   impersonateUser,
   getAuditLogs,
-} = require("../controllers/adminController");
+} from "../controllers/adminController";
 
-const router = express.Router();
+const router = Router();
 
 // Enforce auth and admin role for all admin routes
 router.use(authMiddleware);
@@ -25,4 +25,4 @@ router.get("/users/:id/tasks", getUserTasks);
 router.post("/users/:id/impersonate", impersonateUser);
 router.get("/logs", getAuditLogs);
 
-module.exports = router;
+export default router;

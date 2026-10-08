@@ -1,18 +1,17 @@
-require("dotenv").config();
+import "dotenv/config";
+import express from "express";
+import cors from "cors";
+import helmet from "helmet";
+import cookieParser from "cookie-parser";
+import rateLimit from "express-rate-limit";
 
-const express = require("express");
-const cors = require("cors");
-const helmet = require("helmet");
-const cookieParser = require("cookie-parser");
-const rateLimit = require("express-rate-limit");
-
-const env = require("./lib/env");
-const prisma = require("./lib/prisma");
-const authRouter = require("./routes/auth");
-const tasksRouter = require("./routes/tasks");
-const adminRouter = require("./routes/admin");
-const errorHandler = require("./middleware/errorHandler");
-const notFoundHandler = require("./middleware/notFoundHandler");
+import env from "./lib/env";
+import prisma from "./lib/prisma";
+import authRouter from "./routes/auth";
+import tasksRouter from "./routes/tasks";
+import adminRouter from "./routes/admin";
+import errorHandler from "./middleware/errorHandler";
+import notFoundHandler from "./middleware/notFoundHandler";
 
 const app = express();
 
@@ -79,7 +78,7 @@ const server = app.listen(env.PORT, () => {
 });
 
 // Graceful shutdown
-async function gracefulShutdown(signal) {
+async function gracefulShutdown(signal: string) {
   console.log(`Received ${signal}. Shutting down gracefully...`);
   server.close(async () => {
     await prisma.$disconnect();
@@ -91,4 +90,4 @@ async function gracefulShutdown(signal) {
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 
-module.exports = app;
+export default app;

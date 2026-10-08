@@ -1,18 +1,21 @@
-const prisma = require("../lib/prisma");
-const asyncHandler = require("../utils/asyncHandler");
-const {
+import { Response } from "express";
+import prisma from "../lib/prisma";
+import asyncHandler from "../utils/asyncHandler";
+import {
   BadRequestError,
   NotFoundError,
   ForbiddenError,
-} = require("../utils/errors");
-const { logAudit } = require("../utils/auditLogger");
-const { signAccessToken } = require("../utils/jwt");
+  UnauthorizedError,
+} from "../utils/errors";
+import { logAudit } from "../utils/auditLogger";
+import { signAccessToken } from "../utils/jwt";
+import { AuthRequest } from "../types";
 
 /**
  * GET /api/admin/stats
  * Overview dashboard metrics: total users, total tasks, % done, active 24h, 7d registrations
  */
-const getSystemStats = asyncHandler(async (req, res) => {
+export const getSystemStats = asyncHandler(async (_req: AuthRequest, res: Response) => {
   const [totalUsers, totalTasks, completedTasks, bannedUsers] =
     await Promise.all([
       prisma.user.count(),
@@ -78,16 +81,16 @@ const getSystemStats = asyncHandler(async (req, res) => {
  * GET /api/admin/users
  * Paginated users list with search, filter, and task counts
  */
-const listUsers = asyncHandler(async (req, res) => {
-  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-  const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 10));
-  const search = req.query.search?.trim();
-  const role = req.query.role;
-  const status = req.query.status; // "active", "banned"
-  const sortBy = req.query.sortBy || "createdAt";
+export const listUsers = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
+  const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string, 10) || 10));
+  const search = (req.query.search as string | undefined)?.trim();
+  const role = req.query.role as string | undefined;
+  const status = req.query.status as string | undefined; // "active", "banned"
+  const sortBy = (req.query.sortBy as string) || "createdAt";
   const sortOrder = req.query.sortOrder === "asc" ? "asc" : "desc";
 
-  const where = {};
+  const where: any = {};
 
   if (search) {
     where.email = { contains: search, mode: "insensitive" };
@@ -103,7 +106,7 @@ const listUsers = asyncHandler(async (req, res) => {
     where.isBanned = false;
   }
 
-  const orderBy = {};
+  const orderBy: any = {};
   if (sortBy === "email") {
     orderBy.email = sortOrder;
   } else {
@@ -148,8 +151,12 @@ const listUsers = asyncHandler(async (req, res) => {
  * PATCH /api/admin/users/:id/role
  * Change user role ("admin" | "user")
  */
-const updateUserRole = asyncHandler(async (req, res) => {
-  const targetId = parseInt(req.params.id, 10);
+export const updateUserRole = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    throw new UnauthorizedError("Не авторизовано");
+  }
+
+  const targetId = parseInt(req.params.id as string, 10);
   const { role } = req.body;
 
   if (!["admin", "user"].includes(role)) {
@@ -188,8 +195,12 @@ const updateUserRole = asyncHandler(async (req, res) => {
  * PATCH /api/admin/users/:id/ban
  * Toggle ban / unban
  */
-const toggleUserBan = asyncHandler(async (req, res) => {
-  const targetId = parseInt(req.params.id, 10);
+export const toggleUserBan = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    throw new UnauthorizedError("Не авторизовано");
+  }
+
+  const targetId = parseInt(req.params.id as string, 10);
   const { isBanned } = req.body;
 
   if (typeof isBanned !== "boolean") {
@@ -228,8 +239,8 @@ const toggleUserBan = asyncHandler(async (req, res) => {
  * GET /api/admin/users/:id/tasks
  * Admin inspects a user's tasks (read-only)
  */
-const getUserTasks = asyncHandler(async (req, res) => {
-  const targetId = parseInt(req.params.id, 10);
+export const getUserTasks = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const targetId = parseInt(req.params.id as string, 10);
 
   const user = await prisma.user.findUnique({
     where: { id: targetId },
@@ -260,8 +271,12 @@ const getUserTasks = asyncHandler(async (req, res) => {
  * POST /api/admin/users/:id/impersonate
  * Admin logs in as the target user
  */
-const impersonateUser = asyncHandler(async (req, res) => {
-  const targetId = parseInt(req.params.id, 10);
+export const impersonateUser = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    throw new UnauthorizedError("Не авторизовано");
+  }
+
+  const targetId = parseInt(req.params.id as string, 10);
 
   const targetUser = await prisma.user.findUnique({
     where: { id: targetId },
@@ -300,9 +315,9 @@ const impersonateUser = asyncHandler(async (req, res) => {
  * GET /api/admin/logs
  * View system audit logs
  */
-const getAuditLogs = asyncHandler(async (req, res) => {
-  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-  const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
+export const getAuditLogs = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
+  const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string, 10) || 20));
 
   const [total, logs] = await Promise.all([
     prisma.auditLog.count(),
@@ -329,7 +344,7 @@ const getAuditLogs = asyncHandler(async (req, res) => {
   });
 });
 
-module.exports = {
+export default {
   getSystemStats,
   listUsers,
   updateUserRole,

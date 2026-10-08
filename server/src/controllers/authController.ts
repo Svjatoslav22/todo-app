@@ -1,21 +1,23 @@
-const prisma = require("../lib/prisma");
-const { hashPassword, comparePassword } = require("../utils/password");
-const {
+import { Request, Response } from "express";
+import prisma from "../lib/prisma";
+import { hashPassword, comparePassword } from "../utils/password";
+import {
   signAccessToken,
   signRefreshToken,
   verifyRefreshToken,
   REFRESH_COOKIE_NAME,
   REFRESH_COOKIE_OPTIONS,
-} = require("../utils/jwt");
-const {
+} from "../utils/jwt";
+import {
   UnauthorizedError,
   ForbiddenError,
   ConflictError,
-} = require("../utils/errors");
-const asyncHandler = require("../utils/asyncHandler");
-const { logAudit } = require("../utils/auditLogger");
+} from "../utils/errors";
+import asyncHandler from "../utils/asyncHandler";
+import { logAudit } from "../utils/auditLogger";
+import { AuthRequest } from "../types";
 
-function publicUser(user) {
+function publicUser(user: { id: number; email: string; role?: string; isBanned?: boolean; createdAt?: Date }) {
   return {
     id: user.id,
     email: user.email,
@@ -25,11 +27,11 @@ function publicUser(user) {
   };
 }
 
-function setAuthCookies(res, refreshToken) {
+function setAuthCookies(res: Response, refreshToken: string) {
   res.cookie(REFRESH_COOKIE_NAME, refreshToken, REFRESH_COOKIE_OPTIONS);
 }
 
-const register = asyncHandler(async (req, res) => {
+export const register = asyncHandler(async (req: Request, res: Response) => {
   const { email, password } = req.body;
 
   const existingUser = await prisma.user.findUnique({ where: { email } });
@@ -63,7 +65,7 @@ const register = asyncHandler(async (req, res) => {
   });
 });
 
-const login = asyncHandler(async (req, res) => {
+export const login = asyncHandler(async (req: Request, res: Response) => {
   const { email, password } = req.body;
 
   const user = await prisma.user.findUnique({ where: { email } });
@@ -97,16 +99,16 @@ const login = asyncHandler(async (req, res) => {
   });
 });
 
-const refresh = asyncHandler(async (req, res) => {
+export const refresh = asyncHandler(async (req: Request, res: Response) => {
   const token = req.cookies?.[REFRESH_COOKIE_NAME] || req.body?.refreshToken;
 
   if (!token) {
     throw new UnauthorizedError("Сесія закінчилась або токен оновлення відсутній");
   }
 
-  let decoded;
+  let decoded: { id: number };
   try {
-    decoded = verifyRefreshToken(token);
+    decoded = verifyRefreshToken(token) as { id: number };
   } catch (_err) {
     res.clearCookie(REFRESH_COOKIE_NAME, REFRESH_COOKIE_OPTIONS);
     throw new UnauthorizedError("Недійсний або прострочений токен оновлення");
@@ -138,12 +140,16 @@ const refresh = asyncHandler(async (req, res) => {
   });
 });
 
-const logout = asyncHandler(async (req, res) => {
+export const logout = asyncHandler(async (_req: Request, res: Response) => {
   res.clearCookie(REFRESH_COOKIE_NAME, REFRESH_COOKIE_OPTIONS);
   return res.json({ message: "Успішний вихід із системи" });
 });
 
-const me = asyncHandler(async (req, res) => {
+export const me = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    throw new UnauthorizedError("Не авторизовано");
+  }
+
   const user = await prisma.user.findUnique({
     where: { id: req.user.id },
     select: { id: true, email: true, role: true, isBanned: true, createdAt: true },
@@ -156,7 +162,7 @@ const me = asyncHandler(async (req, res) => {
   return res.json({ user });
 });
 
-module.exports = {
+export default {
   register,
   login,
   refresh,
