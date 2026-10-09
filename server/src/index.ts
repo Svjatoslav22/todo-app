@@ -61,7 +61,12 @@ app.use("/api/auth/register", authLimiter);
 
 // Health check
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+  res.json({
+    status: "ok",
+    uptime: Math.floor(process.uptime()),
+    environment: env.NODE_ENV,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // API Routes
