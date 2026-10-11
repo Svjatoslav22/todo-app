@@ -11,6 +11,10 @@ import {
   ArchiveRestore,
   RotateCcw,
   Tag as TagIcon,
+  Sparkles,
+  Clock,
+  Flag,
+  Wand2,
 } from "lucide-react";
 import Button from "@/components/ui/Button";
 import CustomSelect from "@/components/ui/CustomSelect";
@@ -20,12 +24,6 @@ import Badge from "@/components/ui/Badge";
 import { triggerConfetti } from "@/lib/celebrate";
 import api from "@/lib/api";
 import { useToast } from "@/providers/ToastProvider";
-import {
-  Sparkles,
-  Clock,
-  Flag,
-  Wand2,
-} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const STATUS_OPTIONS = [
@@ -587,7 +585,19 @@ export default function TaskSlideOver({
                 <Button
                   variant="danger"
                   size="sm"
-                  onClick={() => onDelete(task.id)}
+                  onClick={() => {
+                    if (task.isDeleted) {
+                      if (
+                        window.confirm(
+                          `Ви дійсно бажаєте остаточно видалити завдання «${task.title}»? Цю дію неможливо скасувати.`
+                        )
+                      ) {
+                        onDelete(task.id);
+                      }
+                    } else {
+                      onDelete(task.id);
+                    }
+                  }}
                   leftIcon={<Trash2 className="h-3.5 w-3.5" />}
                 >
                   {task.isDeleted ? "Очистити остаточно" : "В корзину"}

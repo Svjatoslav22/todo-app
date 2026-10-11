@@ -71,34 +71,43 @@ export default function Dropdown({
                 );
               }
 
-              return (
-                <button
-                  key={index}
-                  type="button"
-                  disabled={item.disabled}
-                  onClick={() => {
-                    item.onClick?.();
-                    setIsOpen(false);
-                  }}
-                  className={cn(
-                    "flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors select-none",
-                    item.danger
-                      ? "text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40"
-                      : "text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100",
-                    item.disabled && "opacity-50 cursor-not-allowed"
-                  )}
-                >
-                  <span className="flex items-center gap-2">
-                    {item.icon}
-                    <span>{item.label}</span>
-                  </span>
-                  {item.shortcut && (
-                    <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-mono">
-                      {item.shortcut}
+                const isDanger = item.danger || item.variant === "danger";
+                const IconComponent = item.icon;
+
+                return (
+                  <button
+                    key={index}
+                    type="button"
+                    disabled={item.disabled}
+                    onClick={() => {
+                      item.onClick?.();
+                      setIsOpen(false);
+                    }}
+                    className={cn(
+                      "flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors select-none",
+                      isDanger
+                        ? "text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                        : "text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100",
+                      item.disabled && "opacity-50 cursor-not-allowed"
+                    )}
+                  >
+                    <span className="flex items-center gap-2">
+                      {IconComponent && (
+                        typeof IconComponent === "function" ? (
+                          <IconComponent className="h-4 w-4 shrink-0" />
+                        ) : (
+                          IconComponent
+                        )
+                      )}
+                      <span>{item.label}</span>
                     </span>
-                  )}
-                </button>
-              );
+                    {item.shortcut && (
+                      <span className="text-[10px] text-zinc-400 dark:text-zinc-500 font-mono">
+                        {item.shortcut}
+                      </span>
+                    )}
+                  </button>
+                );
             })}
           </motion.div>
         )}

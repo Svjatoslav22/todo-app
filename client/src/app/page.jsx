@@ -1138,7 +1138,7 @@ export default function DashboardPage() {
 
       {/* SlideOver Detailed Task View */}
       <TaskSlideOver
-        key={selectedTask?.id}
+        key={`${selectedTask?.id}-${selectedTask?.updatedAt || ""}`}
         task={selectedTask}
         isOpen={Boolean(selectedTask)}
         onClose={() => setSelectedTask(null)}
