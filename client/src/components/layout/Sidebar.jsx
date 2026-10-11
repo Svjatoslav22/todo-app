@@ -50,6 +50,7 @@ export default function Sidebar({
   onOpenCreateTask,
   onOpenMyDay,
   onOpenPomodoro,
+  onOpenProfile,
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const { theme, resolvedTheme, setTheme, toggleTheme } = useTheme();
@@ -344,7 +345,12 @@ export default function Sidebar({
             collapsed ? "justify-center" : "justify-between"
           )}
         >
-          <div className="flex items-center gap-2.5 overflow-hidden">
+          <button
+            type="button"
+            onClick={onOpenProfile}
+            className="flex items-center gap-2.5 overflow-hidden text-left hover:opacity-80 transition cursor-pointer"
+            title="Переглянути профіль"
+          >
             <Avatar email={user?.email} size="sm" />
             {!collapsed && (
               <div className="truncate">
@@ -356,7 +362,7 @@ export default function Sidebar({
                 </p>
               </div>
             )}
-          </div>
+          </button>
 
           {!collapsed && (
             <div className="flex items-center gap-1">

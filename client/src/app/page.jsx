@@ -24,6 +24,7 @@ import api, { setAccessToken } from "@/lib/api";
 import Sidebar, { SMART_LISTS } from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
 import MobileNav from "@/components/layout/MobileNav";
+import ProfileModal from "@/components/layout/ProfileModal";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import CustomSelect from "@/components/ui/CustomSelect";
@@ -135,6 +136,7 @@ export default function DashboardPage() {
   const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const [isPomodoroOpen, setIsPomodoroOpen] = useState(false);
   const [isMyDayOpen, setIsMyDayOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
   // Live parsed natural language elements
   const parsedPreview = useMemo(() => {
@@ -657,6 +659,7 @@ export default function DashboardPage() {
         onOpenCreateTask={() => setIsCreateModalOpen(true)}
         onOpenMyDay={() => setIsMyDayOpen(true)}
         onOpenPomodoro={() => setIsPomodoroOpen(true)}
+        onOpenProfile={() => setIsProfileModalOpen(true)}
       />
 
       {/* Main Content */}
@@ -929,7 +932,7 @@ export default function DashboardPage() {
                                 "mt-0.5 rounded-lg p-0.5 transition",
                                 isSelected
                                   ? "text-indigo-600 dark:text-indigo-400"
-                                  : "text-zinc-300 dark:text-zinc-600 opacity-0 group-hover:opacity-100"
+                                  : "text-zinc-300 dark:text-zinc-600 opacity-60 sm:opacity-0 sm:group-hover:opacity-100"
                               )}
                               aria-label="Вибрати"
                             >
@@ -1046,9 +1049,9 @@ export default function DashboardPage() {
                               </div>
                             </div>
 
-                            {/* Actions on hover */}
+                            {/* Actions on hover/touch */}
                             <div
-                              className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition shrink-0 ml-2"
+                              className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 flex items-center gap-1 transition shrink-0 ml-2"
                               onClick={(e) => e.stopPropagation()}
                             >
                               {isTrashView ? (
@@ -1269,7 +1272,7 @@ export default function DashboardPage() {
           setSelectedTaskIds([]);
         }}
         onOpenCreateTask={() => setIsCreateModalOpen(true)}
-        onOpenProfile={handleLogout}
+        onOpenProfile={() => setIsProfileModalOpen(true)}
       />
 
       {/* Epic 4: Command Palette */}
@@ -1314,6 +1317,15 @@ export default function DashboardPage() {
         onClose={() => setIsMyDayOpen(false)}
         tasks={allTasks}
         userName={meQuery.data?.name || meQuery.data?.email?.split("@")[0] || "Користувач"}
+      />
+
+      {/* User Profile & Account Settings Modal */}
+      <ProfileModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+        user={meQuery.data}
+        onLogout={handleLogout}
+        onOpenShortcuts={() => setIsShortcutsOpen(true)}
       />
     </div>
   );
