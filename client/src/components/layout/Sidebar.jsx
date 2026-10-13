@@ -57,12 +57,20 @@ export default function Sidebar({
 
   return (
     <motion.aside
+      initial={false}
       animate={{ width: collapsed ? 76 : 260 }}
-      transition={{ type: "spring", stiffness: 350, damping: 30 }}
-      className="hidden md:flex flex-col h-screen sticky top-0 z-30 shrink-0 border-r border-zinc-200/80 dark:border-white/10 bg-white/70 dark:bg-zinc-950/70 backdrop-blur-2xl select-none"
+      transition={{ type: "tween", ease: [0.4, 0, 0.2, 1], duration: 0.25 }}
+      className="hidden md:flex flex-col h-screen sticky top-0 z-30 shrink-0 overflow-hidden border-r border-zinc-200/80 dark:border-white/10 bg-white/70 dark:bg-zinc-950/70 backdrop-blur-2xl select-none"
     >
       {/* Brand & Collapse Header */}
-      <div className="flex items-center justify-between px-4 py-4 border-b border-zinc-200/60 dark:border-white/5 h-16">
+      <div
+        className={cn(
+          "flex items-center border-b border-zinc-200/60 dark:border-white/5",
+          collapsed
+            ? "flex-col justify-center gap-1.5 px-2 py-3"
+            : "justify-between px-4 py-4 h-16"
+        )}
+      >
         <div className="flex items-center gap-2.5 overflow-hidden">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-purple-600 text-white font-bold shadow-md shadow-indigo-500/25">
             ✓
@@ -130,7 +138,7 @@ export default function Sidebar({
       </div>
 
       {/* Navigation Lists */}
-      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-6">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-2 space-y-6">
         {/* Smart Lists */}
         <div className="space-y-1">
           {!collapsed && (
