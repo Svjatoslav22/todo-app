@@ -11,9 +11,14 @@ import {
   Sparkles,
   X,
   TrendingUp,
+  Check,
+  Flag,
+  ListChecks,
+  ArrowRight,
 } from "lucide-react";
 import Button from "@/components/ui/Button";
 import Tooltip from "@/components/ui/Tooltip";
+import { PRIORITY_CONFIG } from "@/components/ui/PrioritySelect";
 import {
   getProductivityData,
   getActivityHeatmapData,
@@ -28,6 +33,8 @@ export default function MyDayModal({
   onClose,
   tasks = [],
   userName = "Користувач",
+  onToggleTaskStatus,
+  onSelectTask,
 }) {
   const [stats, setStats] = useState(() => getProductivityData());
   const [heatmap, setHeatmap] = useState(() => getActivityHeatmapData());
@@ -92,7 +99,7 @@ export default function MyDayModal({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 15 }}
             transition={{ type: "spring", stiffness: 450, damping: 32 }}
-            className="relative w-full max-w-3xl overflow-hidden rounded-3xl border border-zinc-200/80 dark:border-white/10 bg-white/95 dark:bg-zinc-900/95 p-6 sm:p-8 shadow-2xl backdrop-blur-2xl space-y-6 my-auto select-none"
+            className="relative w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-3xl border border-zinc-200/80 dark:border-white/10 bg-white/95 dark:bg-zinc-900/95 p-6 sm:p-8 shadow-2xl backdrop-blur-2xl space-y-6 my-auto select-none"
           >
             {/* Ambient Background Glow */}
             <div className="absolute -top-20 -right-20 h-64 w-64 rounded-full bg-indigo-500/15 blur-3xl pointer-events-none" />
@@ -314,11 +321,11 @@ export default function MyDayModal({
                   </div>
                   <div className="flex items-center gap-1 text-[10px] text-zinc-400">
                     <span>Менше</span>
-                    <span className="h-2 w-2 rounded-xs bg-zinc-200 dark:bg-zinc-800" />
-                    <span className="h-2 w-2 rounded-xs bg-indigo-300 dark:bg-indigo-900" />
-                    <span className="h-2 w-2 rounded-xs bg-indigo-500" />
-                    <span className="h-2 w-2 rounded-xs bg-indigo-600" />
-                    <span className="h-2 w-2 rounded-xs bg-purple-600" />
+                    <span className="h-2 w-2 rounded-sm bg-zinc-200 dark:bg-zinc-800" />
+                    <span className="h-2 w-2 rounded-sm bg-indigo-300 dark:bg-indigo-900" />
+                    <span className="h-2 w-2 rounded-sm bg-indigo-500" />
+                    <span className="h-2 w-2 rounded-sm bg-indigo-600" />
+                    <span className="h-2 w-2 rounded-sm bg-purple-600" />
                     <span>Більше</span>
                   </div>
                 </div>
@@ -341,7 +348,7 @@ export default function MyDayModal({
                         >
                           <div
                             className={cn(
-                              "h-3 w-3 rounded-xs transition-colors cursor-pointer",
+                              "h-3 w-3 rounded-sm transition-colors cursor-pointer",
                               levelColors[cell.level]
                             )}
                           />
@@ -351,6 +358,115 @@ export default function MyDayModal({
                   </div>
                 </div>
               </div>
+            </div>
+
+            {/* Today's Tasks Section */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-indigo-500" />
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
+                    Завдання на сьогодні ({todayCompleted}/{todayTotal})
+                  </h3>
+                </div>
+                <span className="text-xs text-zinc-400 font-medium">
+                  {todayPendingCount === 0 && todayTotal > 0
+                    ? "Усі завдання завершено! 🎉"
+                    : `${todayPendingCount} залишилось`}
+                </span>
+              </div>
+
+              {todayTasks.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-zinc-200 dark:border-white/10 p-5 text-center bg-zinc-50/50 dark:bg-zinc-950/20 space-y-1">
+                  <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-400">
+                    На сьогодні завдань ще не заплановано
+                  </p>
+                  <p className="text-[11px] text-zinc-400">
+                    Встановіть дедлайн або створіть нове завдання для сьогоднішнього дня.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {todayTasks.map((t) => {
+                    const isDone = t.status === "done";
+                    const pConfig = PRIORITY_CONFIG[t.priority] || PRIORITY_CONFIG.none;
+                    const subtasksTotal = t.subtasks?.length || 0;
+                    const subtasksCompleted =
+                      t.subtasks?.filter((s) => s.completed).length || 0;
+
+                    return (
+                      <div
+                        key={t.id}
+                        className={cn(
+                          "group flex items-center justify-between gap-3 rounded-2xl border p-3 transition backdrop-blur-xl",
+                          isDone
+                            ? "border-zinc-200/50 dark:border-white/5 bg-zinc-50/50 dark:bg-zinc-950/40 opacity-70"
+                            : "border-zinc-200/80 dark:border-white/10 bg-white/70 dark:bg-zinc-900/60 hover:border-indigo-300 dark:hover:border-indigo-800"
+                        )}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <button
+                            type="button"
+                            onClick={() => onToggleTaskStatus?.(t.id, t.status)}
+                            className={cn(
+                              "flex h-5 w-5 shrink-0 items-center justify-center rounded-lg border transition duration-150 active:scale-90",
+                              isDone
+                                ? "bg-emerald-500 border-emerald-500 text-white shadow-xs"
+                                : "border-zinc-300 dark:border-zinc-700 hover:border-indigo-500 text-transparent"
+                            )}
+                            aria-label={isDone ? "Позначити невиконаним" : "Позначити виконаним"}
+                          >
+                            <Check className="h-3.5 w-3.5 stroke-[3]" />
+                          </button>
+
+                          <div
+                            onClick={() => {
+                              onSelectTask?.(t);
+                            }}
+                            className="min-w-0 flex-1 cursor-pointer"
+                          >
+                            <p
+                              className={cn(
+                                "text-xs font-semibold truncate transition",
+                                isDone
+                                  ? "line-through text-zinc-400 dark:text-zinc-500"
+                                  : "text-zinc-900 dark:text-zinc-100"
+                              )}
+                            >
+                              {t.title}
+                            </p>
+                            <div className="flex items-center gap-2 text-[10px] text-zinc-400 mt-0.5">
+                              {t.priority !== "none" && (
+                                <span className={cn("inline-flex items-center gap-0.5 font-medium", pConfig.color)}>
+                                  <Flag className={cn("h-2.5 w-2.5", pConfig.fill, pConfig.color)} />
+                                  <span>{pConfig.badgeLabel}</span>
+                                </span>
+                              )}
+                              {subtasksTotal > 0 && (
+                                <span className="inline-flex items-center gap-1">
+                                  <ListChecks className="h-2.5 w-2.5" />
+                                  <span>{subtasksCompleted}/{subtasksTotal}</span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {onSelectTask && (
+                          <button
+                            type="button"
+                            onClick={() => onSelectTask(t)}
+                            className="opacity-0 group-hover:opacity-100 p-1 text-zinc-400 hover:text-indigo-600 transition"
+                            title="Відкрити деталі завдання"
+                          >
+                            <ArrowRight className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Gamification Achievements */}

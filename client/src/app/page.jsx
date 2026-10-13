@@ -1317,6 +1317,16 @@ export default function DashboardPage() {
         onClose={() => setIsMyDayOpen(false)}
         tasks={allTasks}
         userName={meQuery.data?.name || meQuery.data?.email?.split("@")[0] || "Користувач"}
+        onToggleTaskStatus={(taskId, currentStatus) =>
+          updateTaskMutation.mutate({
+            id: taskId,
+            status: currentStatus === "done" ? "todo" : "done",
+          })
+        }
+        onSelectTask={(task) => {
+          setIsMyDayOpen(false);
+          setSelectedTask(task);
+        }}
       />
 
       {/* User Profile & Account Settings Modal */}
