@@ -45,3 +45,5 @@ prisma/*.db-journal
 # Misc
 .eslintcache
 *.tmp
+.vite/
+*.bak
